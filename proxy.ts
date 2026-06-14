@@ -16,7 +16,7 @@ export async function proxy(request: NextRequest) {
         getAll() {
           return request.cookies.getAll()
         },
-        setAll(cookiesToSet: { name: string; value: string; options?: any }[]) {
+        setAll(cookiesToSet: any[]) {
           cookiesToSet.forEach(({ name, value, options }) =>
             request.cookies.set(name, value)
           )
@@ -36,19 +36,24 @@ export async function proxy(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
   const pathname = request.nextUrl.pathname
 
-  // ✅ Landing page - ALWAYS accessible, NO redirects
-  if (pathname === "/") {
+  // IMPORTANT: NEVER intercept API routes
+  if (pathname.startsWith('/api')) {
     return response
   }
 
-  // ✅ Dashboard requires login
-  if (!user && pathname.startsWith("/dashboard")) {
-    return NextResponse.redirect(new URL("/auth/login", request.url))
+  // Landing page - always accessible
+  if (pathname === '/') {
+    return response
   }
 
-  // ✅ Auth pages redirect to dashboard if already logged in
-  if (user && (pathname === "/auth/login" || pathname === "/auth/signup")) {
-    return NextResponse.redirect(new URL("/dashboard", request.url))
+  // Auth pages - redirect to dashboard if logged in
+  if ((pathname === '/auth/login' || pathname === '/auth/signup') && user) {
+    return NextResponse.redirect(new URL('/dashboard', request.url))
+  }
+
+  // Dashboard - require authentication
+  if (pathname.startsWith('/dashboard') && !user) {
+    return NextResponse.redirect(new URL('/auth/login', request.url))
   }
 
   return response
@@ -56,8 +61,9 @@ export async function proxy(request: NextRequest) {
 
 export const config = {
   matcher: [
-    "/",
-    "/dashboard/:path*",
-    "/auth/:path*",
+    '/',
+    '/api/:path*',
+    '/dashboard/:path*',
+    '/auth/:path*',
   ],
 }
