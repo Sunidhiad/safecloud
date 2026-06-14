@@ -1,8 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Search, Upload, User, LogOut, Bell } from 'lucide-react';
-import { createClient } from '@/lib/supabase/client';
 import { useRouter } from 'next/navigation';
 
 interface NavbarProps {
@@ -16,17 +15,18 @@ export default function Navbar({ onSearch, onUpload, currentFolderId }: NavbarPr
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [userEmail, setUserEmail] = useState('');
   const router = useRouter();
-  const supabase = createClient();
 
-  useState(() => {
+  useEffect(() => {
     const getUser = async () => {
+      const { createClient } = await import('@/lib/supabase/client');
+      const supabase = createClient();
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
         setUserEmail(user.email || '');
       }
     };
     getUser();
-  });
+  }, []);
 
   const handleSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
     const query = e.target.value;
@@ -35,20 +35,24 @@ export default function Navbar({ onSearch, onUpload, currentFolderId }: NavbarPr
   };
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
-    router.push('/');
-    router.refresh();
+    try {
+      const { createClient } = await import('@/lib/supabase/client');
+      const supabase = createClient();
+      await supabase.auth.signOut();
+      window.location.href = '/';
+    } catch (error) {
+      console.error('Logout error:', error);
+      window.location.href = '/';
+    }
   };
 
   return (
     <header className="sticky top-0 z-30 h-16 bg-white/90 backdrop-blur-md border-b border-slate-200">
       <div className="flex items-center justify-between h-full px-6">
-        {/* Left side - Page title */}
         <div className="flex items-center space-x-4">
           <h1 className="text-lg font-semibold text-slate-800">Dashboard</h1>
         </div>
 
-        {/* Center - Search Bar */}
         <div className="flex-1 max-w-lg mx-6">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-slate-400" />
@@ -62,9 +66,7 @@ export default function Navbar({ onSearch, onUpload, currentFolderId }: NavbarPr
           </div>
         </div>
 
-        {/* Right side - Actions */}
         <div className="flex items-center space-x-3">
-          {/* Upload Button */}
           <button
             onClick={onUpload}
             className="flex items-center space-x-2 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
@@ -73,12 +75,10 @@ export default function Navbar({ onSearch, onUpload, currentFolderId }: NavbarPr
             <span className="hidden sm:inline">Upload</span>
           </button>
 
-          {/* Notifications */}
           <button className="p-2 text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors">
             <Bell className="h-4 w-4" />
           </button>
 
-          {/* User Menu */}
           <div className="relative">
             <button
               onClick={() => setShowUserMenu(!showUserMenu)}

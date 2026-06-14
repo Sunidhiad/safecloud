@@ -2,10 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import { File as FileIcon, Search } from 'lucide-react';
-import { formatFileSize } from '@/lib/utils/formatFileSize';
-import { getFileIcon } from '@/lib/utils/getFileIcon';
-import FileActions from './FileActions';
+import { File as FileIcon, Search, Star, Download, Trash2, Eye } from 'lucide-react';
+import { formatFileSize, getFileIcon } from '@/lib/files/fileTypes';
 
 interface FileType {
   id: string;
@@ -13,6 +11,8 @@ interface FileType {
   file_type: string;
   file_size: number;
   created_at: string;
+  is_favorite: boolean;
+  is_trashed: boolean;
 }
 
 interface FileListProps {
@@ -28,23 +28,54 @@ export default function FileList({ refreshTrigger, currentFolderId, onFileDelete
   const [searchQuery, setSearchQuery] = useState('');
   const [renamingFile, setRenamingFile] = useState<string | null>(null);
   const [newFileName, setNewFileName] = useState('');
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const supabase = createClient();
 
+  // Check authentication first
   useEffect(() => {
-    loadFiles();
-  }, [refreshTrigger, currentFolderId, searchQuery]);
+    const checkAuth = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          setIsAuthenticated(true);
+        } else {
+          setIsAuthenticated(false);
+          setLoading(false);
+        }
+      } catch (error) {
+        console.error('Auth check error:', error);
+        setIsAuthenticated(false);
+        setLoading(false);
+      }
+    };
+    
+    checkAuth();
+  }, [supabase]);
+
+  // Load files only when authenticated
+  useEffect(() => {
+    if (isAuthenticated) {
+      loadFiles();
+    }
+  }, [refreshTrigger, currentFolderId, searchQuery, isAuthenticated]);
 
   const loadFiles = async () => {
     setLoading(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('Not authenticated');
+      
+      if (!user) {
+        console.log('No authenticated user found');
+        setFiles([]);
+        setLoading(false);
+        return;
+      }
 
       let query = supabase
         .from('files')
         .select('*')
         .eq('owner_id', user.id)
-        .eq('status', 'uploaded');
+        .eq('is_trashed', false);
 
       // Filter by current folder
       if (currentFolderId === null) {
@@ -54,36 +85,23 @@ export default function FileList({ refreshTrigger, currentFolderId, onFileDelete
       }
 
       // Apply search filter
-      if (searchQuery) {
+      if (searchQuery && searchQuery.trim()) {
         query = query.ilike('file_name', `%${searchQuery}%`);
       }
 
       const { data, error } = await query.order('created_at', { ascending: false });
 
-      if (error) throw error;
-      setFiles(data || []);
+      if (error) {
+        console.error('Error loading files:', error);
+        setFiles([]);
+      } else {
+        setFiles(data || []);
+      }
     } catch (error) {
-      console.error('Error loading files:', error);
+      console.error('Error in loadFiles:', error);
+      setFiles([]);
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleDeleteFile = async (fileId: string, fileName: string) => {
-    if (!confirm(`Are you sure you want to delete "${fileName}"?`)) return;
-
-    try {
-      const { error } = await supabase
-        .from('files')
-        .delete()
-        .eq('id', fileId);
-
-      if (error) throw error;
-
-      await loadFiles();
-      if (onFileDeleted) onFileDeleted();
-    } catch (error: any) {
-      alert('Failed to delete file: ' + error.message);
     }
   };
 
@@ -105,18 +123,97 @@ export default function FileList({ refreshTrigger, currentFolderId, onFileDelete
       if (onFileRenamed) onFileRenamed();
       setRenamingFile(null);
     } catch (error: any) {
+      console.error('Rename error:', error);
       alert('Failed to rename file: ' + error.message);
     }
   };
 
-  const handleDownload = (file: FileType) => {
-    // Phase 3: Implement actual file download from OpenStack
-    alert(`Phase 3: Download "${file.file_name}" will be implemented with OpenStack storage.`);
+  const handleFavorite = async (fileId: string, isFavorite: boolean) => {
+    try {
+      await supabase
+        .from('files')
+        .update({ is_favorite: !isFavorite })
+        .eq('id', fileId);
+      await loadFiles();
+    } catch (error: any) {
+      console.error('Favorite error:', error);
+    }
   };
+
+  const handleDelete = async (fileId: string, fileName: string) => {
+    if (!confirm(`Move "${fileName}" to trash?`)) return;
+
+    try {
+      const { error } = await supabase
+        .from('files')
+        .update({ is_trashed: true, trashed_at: new Date().toISOString() })
+        .eq('id', fileId);
+
+      if (error) throw error;
+
+      await loadFiles();
+      if (onFileDeleted) onFileDeleted();
+    } catch (error: any) {
+      console.error('Delete error:', error);
+      alert('Failed to move file to trash: ' + error.message);
+    }
+  };
+
+  const handleDownload = async (fileId: string, fileName: string) => {
+    try {
+      const response = await fetch(`/api/files/download/${fileId}`);
+      
+      if (!response.ok) {
+        throw new Error('Download failed');
+      }
+      
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (error: any) {
+      console.error('Download error:', error);
+      alert('Failed to download file: ' + error.message);
+    }
+  };
+
+  const handleView = (fileId: string, fileType: string) => {
+    if (fileType.startsWith('image/') || fileType === 'application/pdf') {
+      window.open(`/api/files/view/${fileId}`, '_blank');
+    } else {
+      alert('Preview not available. Download the file to view it.');
+    }
+  };
+
+  // Show loading while checking authentication
+  if (loading && !isAuthenticated) {
+    return (
+      <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6">
+        <div className="flex items-center justify-center py-12">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return (
+      <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6">
+        <div className="text-center py-12">
+          <p className="text-slate-500">Please log in to view your files</p>
+        </div>
+      </div>
+    );
+  }
 
   if (loading) {
     return (
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+      <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6">
         <div className="flex items-center justify-center py-12">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
         </div>
@@ -125,38 +222,38 @@ export default function FileList({ refreshTrigger, currentFolderId, onFileDelete
   }
 
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+    <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6">
       <div className="flex items-center justify-between mb-4">
-        <h2 className="text-lg font-semibold text-gray-900 flex items-center">
+        <h2 className="text-lg font-semibold text-slate-900 flex items-center">
           <FileIcon className="h-5 w-5 mr-2 text-blue-600" />
           Files
         </h2>
         <div className="relative">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-slate-400" />
           <input
             type="text"
             placeholder="Search files..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-9 pr-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="pl-9 pr-4 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
         </div>
       </div>
 
       {files.length === 0 ? (
         <div className="text-center py-12">
-          <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <FileIcon className="h-10 w-10 text-gray-400" />
+          <div className="w-20 h-20 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <FileIcon className="h-10 w-10 text-slate-400" />
           </div>
-          <p className="text-gray-500 font-medium">No files in this folder</p>
-          <p className="text-sm text-gray-400 mt-1">
+          <p className="text-slate-500 font-medium">No files in this folder</p>
+          <p className="text-sm text-slate-400 mt-1">
             Upload your first file using the box above
           </p>
         </div>
       ) : (
         <div className="space-y-2">
           {/* Header */}
-          <div className="hidden md:grid md:grid-cols-12 gap-4 px-4 py-2 text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 rounded-lg">
+          <div className="hidden md:grid md:grid-cols-12 gap-4 px-4 py-2 text-xs font-medium text-slate-500 uppercase tracking-wider bg-slate-50 rounded-lg">
             <div className="col-span-5">Name</div>
             <div className="col-span-2">Size</div>
             <div className="col-span-3">Uploaded</div>
@@ -167,7 +264,7 @@ export default function FileList({ refreshTrigger, currentFolderId, onFileDelete
           {files.map((file) => (
             <div
               key={file.id}
-              className="grid grid-cols-1 md:grid-cols-12 gap-2 md:gap-4 items-center px-4 py-3 hover:bg-gray-50 rounded-lg transition-colors group"
+              className="grid grid-cols-1 md:grid-cols-12 gap-2 md:gap-4 items-center px-4 py-3 hover:bg-slate-50 rounded-lg transition-colors group"
             >
               <div className="col-span-5 flex items-center space-x-3">
                 <span className="text-xl">{getFileIcon(file.file_name)}</span>
@@ -182,35 +279,59 @@ export default function FileList({ refreshTrigger, currentFolderId, onFileDelete
                       }
                     }}
                     onBlur={() => setRenamingFile(null)}
-                    className="flex-1 px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="flex-1 px-2 py-1 border border-slate-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
                     autoFocus
                   />
                 ) : (
                   <div>
-                    <p className="font-medium text-gray-900 text-sm truncate max-w-xs">
+                    <p className="font-medium text-slate-900 text-sm truncate max-w-xs">
                       {file.file_name}
                     </p>
-                    <p className="text-xs text-gray-500 md:hidden">
+                    <p className="text-xs text-slate-500 md:hidden">
                       {formatFileSize(file.file_size)} • {new Date(file.created_at).toLocaleDateString()}
                     </p>
                   </div>
                 )}
               </div>
-              <div className="hidden md:block col-span-2 text-sm text-gray-600">
+              <div className="hidden md:block col-span-2 text-sm text-slate-600">
                 {formatFileSize(file.file_size)}
               </div>
-              <div className="hidden md:block col-span-3 text-sm text-gray-600">
+              <div className="hidden md:block col-span-3 text-sm text-slate-600">
                 {new Date(file.created_at).toLocaleDateString()}
               </div>
-              <div className="col-span-2 flex items-center justify-end">
-                <FileActions
-                  onRename={() => {
-                    setRenamingFile(file.id);
-                    setNewFileName(file.file_name);
-                  }}
-                  onDelete={() => handleDeleteFile(file.id, file.file_name)}
-                  onDownload={() => handleDownload(file)}
-                />
+              <div className="col-span-2 flex items-center justify-end space-x-1">
+                <button
+                  onClick={() => handleView(file.id, file.file_type)}
+                  className="p-2 text-slate-400 hover:text-blue-600 rounded-lg hover:bg-blue-50 transition-colors"
+                  title="View"
+                >
+                  <Eye className="h-4 w-4" />
+                </button>
+                <button
+                  onClick={() => handleDownload(file.id, file.file_name)}
+                  className="p-2 text-slate-400 hover:text-green-600 rounded-lg hover:bg-green-50 transition-colors"
+                  title="Download"
+                >
+                  <Download className="h-4 w-4" />
+                </button>
+                <button
+                  onClick={() => handleFavorite(file.id, file.is_favorite)}
+                  className={`p-2 rounded-lg transition-colors ${
+                    file.is_favorite
+                      ? 'text-yellow-500 hover:text-yellow-600'
+                      : 'text-slate-400 hover:text-yellow-500'
+                  }`}
+                  title="Favorite"
+                >
+                  <Star className="h-4 w-4" />
+                </button>
+                <button
+                  onClick={() => handleDelete(file.id, file.file_name)}
+                  className="p-2 text-slate-400 hover:text-red-600 rounded-lg hover:bg-red-50 transition-colors"
+                  title="Delete"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
               </div>
             </div>
           ))}
@@ -218,7 +339,7 @@ export default function FileList({ refreshTrigger, currentFolderId, onFileDelete
       )}
 
       {/* Stats */}
-      <div className="mt-4 pt-4 border-t text-xs text-gray-500">
+      <div className="mt-4 pt-4 border-t text-xs text-slate-500">
         {files.length} file{files.length !== 1 ? 's' : ''}
       </div>
     </div>

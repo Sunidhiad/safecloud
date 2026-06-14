@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import DashboardLayout from '@/components/DashboardLayout';
 import Navbar from '@/components/Navbar';
 import { createClient } from '@/lib/supabase/client';
-import { getFileCategory, formatFileSize, getFileIcon } from '@/lib/files/fileTypes';
+import { formatFileSize, getFileIcon } from '@/lib/files/fileTypes';
 import { 
   Folder, 
   File, 
@@ -145,6 +145,26 @@ export default function MyFilesPage() {
       </DashboardLayout>
     );
   }
+
+    function getFileCategory(file_name: string) {
+      const icon = getFileIcon(file_name);
+      const ext = file_name.split('.').pop()?.toLowerCase() || '';
+      let name: FilterType | 'Others' = 'Others';
+
+      const docs = ['pdf', 'doc', 'docx', 'txt', 'xls', 'xlsx', 'ppt', 'pptx'];
+      const images = ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp', 'svg'];
+      const videos = ['mp4', 'mov', 'avi', 'mkv', 'webm'];
+      const audio = ['mp3', 'wav', 'ogg', 'flac'];
+      const apks = ['apk'];
+
+      if (images.includes(ext)) name = 'Images';
+      else if (docs.includes(ext)) name = 'Documents';
+      else if (videos.includes(ext)) name = 'Videos';
+      else if (audio.includes(ext)) name = 'Audio';
+      else if (apks.includes(ext)) name = 'APK';
+
+      return { name, icon };
+    }
 
   return (
     <DashboardLayout>

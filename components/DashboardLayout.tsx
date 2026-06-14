@@ -14,7 +14,6 @@ import {
   Trash2, 
   Settings,
   Cloud,
-  LogOut,
   Brain,
   User,
   Menu,
@@ -36,19 +35,31 @@ export default function DashboardLayout({
   const pathname = usePathname();
   const supabase = createClient();
 
+  // Check authentication - this protects the dashboard
   useEffect(() => {
-    const checkUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        router.push('/auth/login');
-      } else {
+    const checkAuth = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        
+        if (!user) {
+          // Not logged in - redirect to login page
+          router.push('/auth/login');
+          return;
+        }
+        
+        // User is logged in, set user info
         setUserEmail(user.email || '');
         const name = user.user_metadata?.full_name || user.email?.split('@')[0] || 'User';
         setUserName(name);
+        setLoading(false);
+        
+      } catch (error) {
+        console.error('Auth error:', error);
+        router.push('/auth/login');
       }
-      setLoading(false);
     };
-    checkUser();
+    
+    checkAuth();
   }, [router, supabase]);
 
   // Handle responsive sidebar
@@ -80,6 +91,7 @@ export default function DashboardLayout({
     { name: 'Settings', href: '/dashboard/settings', icon: Settings },
   ];
 
+  // Show loading state while checking authentication
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-indigo-50">
@@ -121,14 +133,14 @@ export default function DashboardLayout({
       >
         {/* Logo Section */}
         <div className="h-16 flex items-center justify-between px-6 border-b border-slate-100">
-          <div className="flex items-center space-x-2">
+          <Link href="/dashboard" className="flex items-center space-x-2">
             <div className="w-8 h-8 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-lg flex items-center justify-center shadow-lg">
               <Cloud className="h-4 w-4 text-white" />
             </div>
             <span className="text-lg font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
               SafeCloud
             </span>
-          </div>
+          </Link>
           <button
             onClick={() => setSidebarOpen(false)}
             className="lg:hidden text-slate-400 hover:text-slate-600 transition-colors"
