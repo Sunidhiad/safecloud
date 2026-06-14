@@ -10,10 +10,11 @@ const STORAGE_SERVER_SECRET = process.env.STORAGE_SERVER_SECRET!;
 
 export async function GET(
     request: NextRequest,
-    { params }: { params: { id: string } }
+    { params }: { params: Promise<{ id: string }> }
 ) {
     try {
-        const { id } = params;
+        // Await params to get id (Next.js 16 pattern)
+        const { id } = await params;
 
         // Authenticate user
         const cookieStore = await cookies();
@@ -114,7 +115,10 @@ export async function GET(
         const inlineTypes = isImage || isPdf || isVideo || isAudio;
         const disposition = inlineTypes ? 'inline' : 'attachment';
 
-        return new NextResponse(new Uint8Array(decryptedBuffer), {
+        // Convert Node Buffer to Uint8Array for NextResponse body to satisfy typings
+        const responseBody = new Uint8Array(decryptedBuffer);
+
+        return new NextResponse(responseBody, {
             status: 200,
             headers: {
                 'Content-Type': file.file_type,

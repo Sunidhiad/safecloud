@@ -2,18 +2,20 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 
-export const runtime = 'nodejs';
-
-const STORAGE_SERVER_URL = process.env.STORAGE_SERVER_URL!;
-const STORAGE_SERVER_SECRET = process.env.STORAGE_SERVER_SECRET!;
-
-export async function DELETE(
+export async function PUT(
     request: NextRequest,
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
-        // Await params to get id (Next.js 16 pattern)
         const { id } = await params;
+        const { newFileName } = await request.json();
+
+        if (!newFileName || !newFileName.trim()) {
+            return NextResponse.json(
+                { error: 'File name is required' },
+                { status: 400 }
+            );
+        }
 
         const cookieStore = await cookies();
         const supabase = createServerClient(
@@ -46,50 +48,38 @@ export async function DELETE(
             );
         }
 
-        // Get file metadata
-        const { data: file, error: fileError } = await supabase
+        // Verify file ownership
+        const { data: existingFile, error: findError } = await supabase
             .from('files')
-            .select('*')
+            .select('id')
             .eq('id', id)
             .eq('owner_id', user.id)
             .single();
 
-        if (fileError || !file) {
+        if (findError || !existingFile) {
             return NextResponse.json(
                 { error: 'File not found' },
                 { status: 404 }
             );
         }
 
-        // Delete from storage server
-        try {
-            await fetch(`${STORAGE_SERVER_URL}/files/${file.object_key}`, {
-                method: 'DELETE',
-                headers: {
-                    'x-storage-secret': STORAGE_SERVER_SECRET
-                }
-            });
-        } catch (deleteError) {
-            console.error('Storage server delete error:', deleteError);
-            // Continue with database deletion
-        }
-
-        // Permanently delete from database
+        // Update only the file_name, keep object_key unchanged
         const { error } = await supabase
             .from('files')
-            .delete()
-            .eq('id', id);
+            .update({ file_name: newFileName.trim() })
+            .eq('id', id)
+            .eq('owner_id', user.id);
 
         if (error) throw error;
 
         return NextResponse.json({ 
             success: true, 
-            message: 'File permanently deleted' 
+            message: 'File renamed successfully' 
         });
     } catch (error) {
-        console.error('Permanent delete API error:', error);
+        console.error('Rename API error:', error);
         return NextResponse.json(
-            { error: error instanceof Error ? error.message : 'Failed to delete file permanently' },
+            { error: error instanceof Error ? error.message : 'Failed to rename file' },
             { status: 500 }
         );
     }

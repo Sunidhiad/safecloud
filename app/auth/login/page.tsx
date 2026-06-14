@@ -39,18 +39,32 @@ export default function LoginPage() {
       });
 
       if (error) {
-        if (error.message === 'Invalid login credentials') {
+        // Proper error handling based on error message
+        const errorMessage = error.message;
+        
+        if (errorMessage === 'Invalid login credentials') {
           throw new Error('Invalid email or password. Please try again.');
-        } else if (error.message.includes('Email not confirmed')) {
+        } else if (errorMessage.includes('Email not confirmed')) {
           throw new Error('Please confirm your email address before logging in.');
+        } else if (errorMessage.includes('Invalid email')) {
+          throw new Error('Please enter a valid email address.');
         } else {
-          throw error;
+          throw new Error(errorMessage || 'Failed to login. Please try again.');
         }
       }
 
       if (data.session) {
-        router.push('/dashboard');
-        router.refresh();
+        // Check MFA requirement
+        const { data: aalData, error: aalError } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+        
+        if (!aalError && aalData && aalData.nextLevel === 'aal2' && aalData.currentLevel !== 'aal2') {
+          // MFA required, redirect to MFA page
+          router.replace('/auth/mfa');
+          return;
+        }
+        
+        // No MFA required, go to dashboard
+        router.replace('/dashboard');
       }
     } catch (error: any) {
       console.error('Login error:', error);
@@ -61,16 +75,16 @@ export default function LoginPage() {
   };
 
   const features = [
-    { icon: Shield, text: 'Military-grade encryption' },
+    { icon: Shield, text: 'AES-256 Encryption' },
     { icon: Zap, text: 'Lightning fast access' },
-    { icon: Cloud, text: '99.9% uptime guarantee' },
+    { icon: Cloud, text: 'Private storage server' },
   ];
 
   return (
     <div className="min-h-screen flex">
       {/* Left Panel - Branding */}
       <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 relative overflow-hidden">
-        <div className={`absolute inset-0 bg-[url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.05'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")] opacity-10`}></div>
+        <div className="absolute inset-0 opacity-10" style={{backgroundImage: 'url("data:image/svg+xml,%3Csvg width=%2260%22 height=%2260%22 viewBox=%220 0 60 60%22 xmlns=%22http://www.w3.org/2000/svg%22%3E%3Cg fill=%22none%22 fill-rule=%22evenodd%22%3E%3Cg fill=%22%23ffffff%22 fill-opacity=%220.05%22%3E%3Cpath d=%22M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z%22/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")'}}></div>
         
         <div className="relative z-10 flex flex-col justify-center px-12 text-white">
           <motion.div
@@ -87,7 +101,7 @@ export default function LoginPage() {
             
             <h1 className="text-4xl font-bold mb-4">Welcome Back!</h1>
             <p className="text-xl text-blue-100 mb-8">
-              Access your secure cloud storage and manage your files with enterprise-grade protection.
+              Access your encrypted cloud storage with military-grade security.
             </p>
             
             <div className="space-y-4">
@@ -117,7 +131,7 @@ export default function LoginPage() {
         >
           <div className="text-center lg:hidden mb-8">
             <div className="flex justify-center mb-4">
-              <div className="w-12 h-12 gradient-primary rounded-xl flex items-center justify-center">
+              <div className="w-12 h-12 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-xl flex items-center justify-center">
                 <Cloud className="h-7 w-7 text-white" />
               </div>
             </div>
@@ -176,23 +190,32 @@ export default function LoginPage() {
                 </div>
               </div>
 
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full flex items-center justify-center gradient-primary text-white py-2.5 rounded-lg font-semibold hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed group"
-              >
-                {loading ? (
-                  <div className="flex items-center">
-                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
-                    Signing in...
-                  </div>
-                ) : (
-                  <>
-                    <LogIn className="h-5 w-5 mr-2 group-hover:scale-110 transition-transform" />
-                    Sign In
-                  </>
-                )}
-              </button>
+              <div className="flex items-center justify-between">
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="flex-1 flex items-center justify-center bg-gradient-to-r from-blue-600 to-indigo-600 text-white py-2.5 rounded-lg font-semibold hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed group mr-3"
+                >
+                  {loading ? (
+                    <div className="flex items-center">
+                      <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
+                      Signing in...
+                    </div>
+                  ) : (
+                    <>
+                      <LogIn className="h-5 w-5 mr-2 group-hover:scale-110 transition-transform" />
+                      Sign In
+                    </>
+                  )}
+                </button>
+                
+                <Link
+                  href="/auth/forgot-password"
+                  className="text-sm text-blue-600 hover:text-blue-700 transition-colors whitespace-nowrap"
+                >
+                  Forgot Password?
+                </Link>
+              </div>
             </form>
 
             <div className="mt-6 text-center">

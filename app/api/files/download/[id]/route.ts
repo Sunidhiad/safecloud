@@ -10,10 +10,11 @@ const STORAGE_SERVER_SECRET = process.env.STORAGE_SERVER_SECRET!;
 
 export async function GET(
     request: NextRequest,
-    { params }: { params: { id: string } }
+    { params }: { params: Promise<{ id: string }> }
 ) {
     try {
-        const { id } = params;
+        // Await params to get id (Next.js 16 pattern)
+        const { id } = await params;
 
         // 1. Authenticate user
         const cookieStore = await cookies();
@@ -107,15 +108,16 @@ export async function GET(
 
         // 7. Return decrypted file
         const encodedFileName = encodeURIComponent(file.file_name);
-        // Convert Node Buffer to Uint8Array for NextResponse compatibility
-        const uint8Array = new Uint8Array(decryptedBuffer);
 
-        return new NextResponse(uint8Array, {
+        // Convert Node Buffer to Uint8Array for Response body compatibility
+        const body = new Uint8Array(decryptedBuffer);
+
+        return new NextResponse(body, {
             status: 200,
             headers: {
                 'Content-Type': file.file_type,
                 'Content-Disposition': `attachment; filename="${encodedFileName}"; filename*=UTF-8''${encodedFileName}`,
-                'Content-Length': decryptedBuffer.length.toString(),
+                'Content-Length': body.byteLength.toString(),
                 'Cache-Control': 'private, no-cache, no-store, must-revalidate',
             },
         });

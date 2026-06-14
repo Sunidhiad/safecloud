@@ -36,19 +36,20 @@ export async function proxy(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
   const pathname = request.nextUrl.pathname
 
-  // IMPORTANT: NEVER intercept API routes
+  // NEVER intercept API routes
   if (pathname.startsWith('/api')) {
     return response
   }
 
-  // Landing page - always accessible
-  if (pathname === '/') {
+  // Public routes (always accessible)
+  const publicRoutes = ['/', '/auth/login', '/auth/signup', '/auth/forgot-password', '/auth/update-password']
+  if (publicRoutes.includes(pathname)) {
     return response
   }
 
-  // Auth pages - redirect to dashboard if logged in
-  if ((pathname === '/auth/login' || pathname === '/auth/signup') && user) {
-    return NextResponse.redirect(new URL('/dashboard', request.url))
+  // MFA page - accessible for authenticated users who need MFA
+  if (pathname === '/auth/mfa') {
+    return response
   }
 
   // Dashboard - require authentication

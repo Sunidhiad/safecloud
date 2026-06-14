@@ -9,10 +9,11 @@ const STORAGE_SERVER_SECRET = process.env.STORAGE_SERVER_SECRET!;
 
 export async function DELETE(
     request: NextRequest,
-    { params }: { params: { id: string } }
+    { params }: { params: Promise<{ id: string }> }
 ) {
     try {
-        const { id } = params;
+        // Await params to get id (Next.js 16 pattern)
+        const { id } = await params;
 
         // 1. Authenticate user
         const cookieStore = await cookies();
@@ -61,7 +62,7 @@ export async function DELETE(
             );
         }
 
-        // 3. Delete from storage server
+        // 3. Delete from storage server (optional - you can keep or remove)
         let storageDeleteSuccess = false;
         try {
             const deleteResponse = await fetch(`${STORAGE_SERVER_URL}/files/${file.object_key}`, {
@@ -76,9 +77,10 @@ export async function DELETE(
             }
         } catch (deleteError) {
             console.error('Storage server delete error:', deleteError);
+            // Don't fail the request - file might already be deleted
         }
 
-        // 4. Move to trash in Supabase (or delete if you prefer permanent)
+        // 4. Move to trash in Supabase (not permanent delete)
         const { error: updateError } = await supabase
             .from('files')
             .update({ 
@@ -89,7 +91,7 @@ export async function DELETE(
 
         if (updateError) {
             return NextResponse.json(
-                { error: 'Failed to update file status: ' + updateError.message },
+                { error: 'Failed to move file to trash: ' + updateError.message },
                 { status: 500 }
             );
         }
@@ -105,9 +107,7 @@ export async function DELETE(
 
         return NextResponse.json({
             success: true,
-            message: storageDeleteSuccess 
-                ? 'File moved to trash and deleted from storage server'
-                : 'File moved to trash but storage server deletion may have failed',
+            message: 'File moved to trash',
         });
     } catch (error) {
         console.error('Delete API error:', error);

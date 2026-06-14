@@ -4,10 +4,7 @@ import { cookies } from 'next/headers';
 
 export const runtime = 'nodejs';
 
-const STORAGE_SERVER_URL = process.env.STORAGE_SERVER_URL!;
-const STORAGE_SERVER_SECRET = process.env.STORAGE_SERVER_SECRET!;
-
-export async function DELETE(
+export async function POST(
     request: NextRequest,
     { params }: { params: Promise<{ id: string }> }
 ) {
@@ -46,50 +43,32 @@ export async function DELETE(
             );
         }
 
-        // Get file metadata
-        const { data: file, error: fileError } = await supabase
-            .from('files')
-            .select('*')
-            .eq('id', id)
-            .eq('owner_id', user.id)
-            .single();
-
-        if (fileError || !file) {
-            return NextResponse.json(
-                { error: 'File not found' },
-                { status: 404 }
-            );
-        }
-
-        // Delete from storage server
-        try {
-            await fetch(`${STORAGE_SERVER_URL}/files/${file.object_key}`, {
-                method: 'DELETE',
-                headers: {
-                    'x-storage-secret': STORAGE_SERVER_SECRET
-                }
-            });
-        } catch (deleteError) {
-            console.error('Storage server delete error:', deleteError);
-            // Continue with database deletion
-        }
-
-        // Permanently delete from database
+        // Restore file from trash
         const { error } = await supabase
             .from('files')
-            .delete()
-            .eq('id', id);
+            .update({ is_trashed: false, trashed_at: null })
+            .eq('id', id)
+            .eq('owner_id', user.id);
 
         if (error) throw error;
 
+        // Log activity
+        await supabase
+            .from('file_activity_logs')
+            .insert({
+                file_id: id,
+                user_id: user.id,
+                action: 'restore'
+            });
+
         return NextResponse.json({ 
             success: true, 
-            message: 'File permanently deleted' 
+            message: 'File restored from trash' 
         });
     } catch (error) {
-        console.error('Permanent delete API error:', error);
+        console.error('Restore API error:', error);
         return NextResponse.json(
-            { error: error instanceof Error ? error.message : 'Failed to delete file permanently' },
+            { error: error instanceof Error ? error.message : 'Failed to restore file' },
             { status: 500 }
         );
     }
