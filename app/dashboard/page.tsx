@@ -1,300 +1,248 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import DashboardLayout from '@/components/DashboardLayout';
 import Navbar from '@/components/Navbar';
-import FileUploadBox from '@/components/FileUploadBox';
 import FileList from '@/components/FileList';
-import FolderList from '@/components/FolderList';
-import CreateFolderButton from '@/components/CreateFolderButton';
-import Breadcrumb from '@/components/Breadcrumb';
-import { motion } from 'framer-motion';
 import { createClient } from '@/lib/supabase/client';
 import { 
-  ArrowLeft, 
   HardDrive, 
   Shield, 
-  TrendingUp, 
   Database, 
   FolderRoot,
-  Sparkles,
-  Activity
+  Image,
+  Video,
+  Music,
+  FileText,
+  Upload,
+  Plus,
+  TrendingUp
 } from 'lucide-react';
 
-interface FolderType {
-  id: string;
-  name: string;
-  created_at: string;
-  parent_folder_id: string | null;
-}
-
-interface BreadcrumbItem {
-  id: string | null;
-  name: string;
-}
+const categories = [
+  { id: 'images', name: 'Images', icon: Image, types: ['jpg', 'jpeg', 'png', 'webp', 'gif'], color: 'from-blue-500 to-blue-600', bgColor: 'bg-blue-50' },
+  { id: 'videos', name: 'Videos', icon: Video, types: ['mp4', 'mov', 'mkv', 'avi'], color: 'from-purple-500 to-purple-600', bgColor: 'bg-purple-50' },
+  { id: 'audio', name: 'Audio', icon: Music, types: ['mp3', 'wav', 'm4a', 'ogg'], color: 'from-green-500 to-green-600', bgColor: 'bg-green-50' },
+  { id: 'documents', name: 'Documents', icon: FileText, types: ['pdf', 'doc', 'docx', 'txt', 'ppt', 'pptx', 'xls', 'xlsx'], color: 'from-orange-500 to-orange-600', bgColor: 'bg-orange-50' }
+];
 
 export default function DashboardPage() {
-  const [userName, setUserName] = useState<string>('');
+  const [userName, setUserName] = useState('');
   const [refreshTrigger, setRefreshTrigger] = useState(0);
-  const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
-  const [currentFolderName, setCurrentFolderName] = useState<string>('');
-  const [folderPath, setFolderPath] = useState<BreadcrumbItem[]>([{ id: null, name: 'Root' }]);
-  const [folders, setFolders] = useState<FolderType[]>([]);
-  const [stats, setStats] = useState({
-    totalFiles: 0,
-    totalSize: 0,
-    totalFolders: 0
-  });
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [categoryTypes, setCategoryTypes] = useState<string[] | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [stats, setStats] = useState({ totalFiles: 0, totalSize: 0, totalFolders: 0 });
   const supabase = createClient();
 
   useEffect(() => {
-    const getUserAndStats = async () => {
+    const loadData = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
         const name = user.user_metadata?.full_name || user.email?.split('@')[0] || 'User';
         setUserName(name);
-        await loadStats(user.id);
+        
+        const { data: files } = await supabase.from('files').select('file_size').eq('owner_id', user.id).eq('is_trashed', false);
+        const { data: folders } = await supabase.from('folders').select('id').eq('owner_id', user.id);
+        const totalSize = files?.reduce((sum, f) => sum + (f.file_size || 0), 0) || 0;
+        setStats({ totalFiles: files?.length || 0, totalSize, totalFolders: folders?.length || 0 });
       }
     };
-    
-    getUserAndStats();
-    loadFolders();
-  }, [refreshTrigger, currentFolderId]);
+    loadData();
+  }, [refreshTrigger]);
 
-  const loadStats = async (userId: string) => {
-    const { data: files } = await supabase
-      .from('files')
-      .select('file_size')
-      .eq('owner_id', userId);
-    
-    const { data: folders } = await supabase
-      .from('folders')
-      .select('id')
-      .eq('owner_id', userId);
-    
-    const totalSize = files?.reduce((sum, file) => sum + (file.file_size || 0), 0) || 0;
-    
-    setStats({
-      totalFiles: files?.length || 0,
-      totalSize: totalSize,
-      totalFolders: folders?.length || 0
-    });
-  };
-
-  const loadFolders = async () => {
+  const handleFileUpload = async (file: File) => {
+    setUploading(true);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+      const formData = new FormData();
+      formData.append('file', file);
 
-      let query = supabase
-        .from('folders')
-        .select('*')
-        .eq('owner_id', user.id);
+      const response = await fetch('/api/files/upload', {
+        method: 'POST',
+        body: formData,
+      });
 
-      if (currentFolderId === null) {
-        query = query.is('parent_folder_id', null);
+      if (response.ok) {
+        setRefreshTrigger(prev => prev + 1);
+        alert(`File "${file.name}" uploaded successfully!`);
       } else {
-        query = query.eq('parent_folder_id', currentFolderId);
+        const error = await response.json();
+        alert('Upload failed: ' + error.error);
       }
-
-      const { data, error } = await query.order('created_at', { ascending: false });
-
-      if (error) throw error;
-      setFolders(data || []);
     } catch (error) {
-      console.error('Error loading folders:', error);
+      console.error('Upload error:', error);
+      alert('Upload failed');
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
 
-  const handleDataChange = () => {
-    setRefreshTrigger(prev => prev + 1);
-    loadFolders();
+  const triggerUpload = () => {
+    fileInputRef.current?.click();
   };
 
-  const handleFolderOpen = async (folderId: string, folderName: string) => {
-    setCurrentFolderId(folderId);
-    setCurrentFolderName(folderName);
-    
-    const newPath = [...folderPath];
-    newPath.push({ id: folderId, name: folderName });
-    setFolderPath(newPath);
-  };
-
-  const handleNavigateToFolder = (folderId: string | null) => {
-    if (folderId === null) {
-      setCurrentFolderId(null);
-      setCurrentFolderName('');
-      const rootIndex = folderPath.findIndex(item => item.id === null);
-      setFolderPath(folderPath.slice(0, rootIndex + 1));
-    } else {
-      const folderIndex = folderPath.findIndex(item => item.id === folderId);
-      if (folderIndex !== -1) {
-        setFolderPath(folderPath.slice(0, folderIndex + 1));
-        setCurrentFolderId(folderId);
-        setCurrentFolderName(folderPath[folderIndex].name);
-      }
+  const onFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (files && files.length > 0) {
+      handleFileUpload(files[0]);
     }
   };
 
-  const handleGoBack = () => {
-    if (folderPath.length > 1) {
-      const newPath = [...folderPath];
-      newPath.pop();
-      const newCurrentFolder = newPath[newPath.length - 1];
-      setFolderPath(newPath);
-      setCurrentFolderId(newCurrentFolder.id);
-      setCurrentFolderName(newCurrentFolder.name);
-    }
-  };
-
-  const formatTotalSize = (bytes: number) => {
-    if (bytes === 0) return '0 MB';
+  const formatSize = (bytes: number) => {
     const mb = bytes / (1024 * 1024);
     if (mb < 1024) return `${mb.toFixed(1)} MB`;
     return `${(mb / 1024).toFixed(1)} GB`;
   };
 
   const statCards = [
-    {
-      title: 'Total Files',
-      value: stats.totalFiles.toLocaleString(),
-      icon: Database,
-      change: '+12%',
-      color: 'from-blue-500 to-blue-600',
-      bgColor: 'bg-blue-50'
-    },
-    {
-      title: 'Storage Used',
-      value: formatTotalSize(stats.totalSize),
-      icon: HardDrive,
-      change: '+8%',
-      color: 'from-emerald-500 to-emerald-600',
-      bgColor: 'bg-emerald-50'
-    },
-    {
-      title: 'Total Folders',
-      value: stats.totalFolders.toLocaleString(),
-      icon: FolderRoot,
-      change: '+3',
-      color: 'from-purple-500 to-purple-600',
-      bgColor: 'bg-purple-50'
-    },
-    {
-      title: 'Security Status',
-      value: 'Protected',
-      icon: Shield,
-      change: 'Active',
-      color: 'from-indigo-500 to-indigo-600',
-      bgColor: 'bg-indigo-50'
-    },
+    { title: 'Total Files', value: stats.totalFiles.toLocaleString(), icon: Database, color: 'from-blue-500 to-blue-600', bgColor: 'bg-blue-50' },
+    { title: 'Storage Used', value: formatSize(stats.totalSize), icon: HardDrive, color: 'from-emerald-500 to-emerald-600', bgColor: 'bg-emerald-50' },
+    { title: 'Total Folders', value: stats.totalFolders.toLocaleString(), icon: FolderRoot, color: 'from-purple-500 to-purple-600', bgColor: 'bg-purple-50' },
+    { title: 'Security', value: 'AES-256', icon: Shield, color: 'from-indigo-500 to-indigo-600', bgColor: 'bg-indigo-50' }
   ];
 
-  return (
-    <DashboardLayout>
-      <div className="space-y-6">
-        {/* Welcome Banner */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5 }}
-          className="relative overflow-hidden bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 rounded-2xl p-8 text-white"
-        >
-          <div className={`absolute inset-0 bg-[url('data:image/svg+xml,%3Csvg width="60" height="60" viewBox="0 0 60 60" xmlns="http://www.w3.org/2000/svg"%3E%3Cg fill="none" fill-rule="evenodd"%3E%3Cg fill="%23ffffff" fill-opacity="0.05"%3E%3Cpath d="M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z"/%3E%3C/g%3E%3C/g%3E%3C/svg%3E')] opacity-10`}></div>
-          <div className="relative flex items-center justify-between">
-            <div>
-              <h1 className="text-2xl font-bold mb-2 flex items-center">
-                Welcome back, {userName}! 👋
-                <Sparkles className="ml-2 h-5 w-5 text-yellow-300" />
-              </h1>
-              <p className="text-blue-100">
-                Your secure cloud storage dashboard is ready
-              </p>
-              <div className="mt-3 flex items-center space-x-2 text-sm text-blue-200">
-                <Activity className="h-4 w-4" />
-                <span>All systems operational</span>
-              </div>
-            </div>
-            <TrendingUp className="h-12 w-12 text-white/20 hidden sm:block" />
-          </div>
-        </motion.div>
+  const handleCategoryClick = (category: typeof categories[0]) => {
+    if (selectedCategory === category.name) {
+      setSelectedCategory(null);
+      setCategoryTypes(null);
+    } else {
+      setSelectedCategory(category.name);
+      setCategoryTypes(category.types);
+    }
+  };
 
-        {/* Stats Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-          {statCards.map((stat, index) => {
+  const clearFilter = () => {
+    setSelectedCategory(null);
+    setCategoryTypes(null);
+  };
+
+  return (
+    <DashboardLayout onUploadClick={triggerUpload}>
+      <input
+        type="file"
+        ref={fileInputRef}
+        onChange={onFileSelect}
+        className="hidden"
+      />
+      
+      <Navbar onUpload={triggerUpload} />
+      
+      <div className="p-8 lg:p-10">
+        {/* Welcome Banner - Larger */}
+        <div className="bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 rounded-2xl p-8 mb-8 text-white">
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-3xl lg:text-4xl font-bold mb-2">Welcome back, {userName}!</h1>
+              <p className="text-blue-100 text-base lg:text-lg">Your secure cloud storage dashboard is ready</p>
+            </div>
+            <TrendingUp className="h-16 w-16 text-white/20 hidden lg:block" />
+          </div>
+        </div>
+
+        {/* Stats Cards - Larger */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-10">
+          {statCards.map((stat) => {
             const Icon = stat.icon;
             return (
-              <motion.div
-                key={index}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5, delay: index * 0.1 }}
-                whileHover={{ y: -2 }}
-                className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6 hover:shadow-md transition-all"
-              >
-                <div className="flex items-center justify-between mb-4">
-                  <div className={`${stat.bgColor} p-3 rounded-xl`}>
-                    <Icon className={`h-6 w-6 bg-gradient-to-r ${stat.color} bg-clip-text text-transparent`} />
-                  </div>
-                  <span className="text-xs font-medium text-emerald-600 bg-emerald-50 px-2 py-1 rounded-full">
-                    {stat.change}
-                  </span>
+              <div key={stat.title} className="bg-white rounded-xl border border-slate-200 p-6 hover:shadow-md transition-shadow">
+                <div className={`${stat.bgColor} w-14 h-14 rounded-xl flex items-center justify-center mb-4`}>
+                  <Icon className={`h-7 w-7 bg-gradient-to-r ${stat.color} bg-clip-text text-transparent`} />
                 </div>
-                <h3 className="text-2xl font-bold text-slate-900 mb-1">{stat.value}</h3>
-                <p className="text-sm text-slate-600">{stat.title}</p>
-              </motion.div>
+                <p className="text-3xl font-bold text-slate-800">{stat.value}</p>
+                <p className="text-base text-slate-500 mt-1">{stat.title}</p>
+              </div>
             );
           })}
         </div>
 
-        {/* Navigation Bar */}
-        <div className="flex items-center justify-between flex-wrap gap-4">
-          <div className="flex items-center space-x-4">
-            {folderPath.length > 1 && (
-              <button
-                onClick={handleGoBack}
-                className="inline-flex items-center px-3 py-2 text-slate-600 hover:text-blue-600 transition-colors rounded-lg hover:bg-slate-100"
-              >
-                <ArrowLeft className="h-4 w-4 mr-1" />
-                Back
-              </button>
-            )}
-            <Breadcrumb items={folderPath} onNavigate={handleNavigateToFolder} />
+        {/* Upload Area - Larger */}
+        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-2xl border border-blue-100 p-10 mb-10 text-center">
+          <div className="flex flex-col items-center justify-center">
+            <div className="w-20 h-20 bg-blue-100 rounded-full flex items-center justify-center mb-5">
+              <Upload className="h-10 w-10 text-blue-600" />
+            </div>
+            <h3 className="text-2xl font-semibold text-slate-800 mb-3">Upload files to your cloud</h3>
+            <p className="text-base text-slate-500 mb-6">Drag and drop or click the button below</p>
+            <button
+              onClick={triggerUpload}
+              disabled={uploading}
+              className="inline-flex items-center px-8 py-3 bg-blue-600 text-white rounded-xl font-medium text-base hover:bg-blue-700 transition-colors disabled:opacity-50"
+            >
+              <Plus className="h-5 w-5 mr-2" />
+              {uploading ? 'Uploading...' : 'Select files to upload'}
+            </button>
           </div>
-          <CreateFolderButton parentFolderId={currentFolderId} onFolderCreated={handleDataChange} />
         </div>
 
-        {/* Current Location Indicator */}
-        {currentFolderId && (
-          <motion.div
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-            className="bg-blue-50 border border-blue-200 rounded-xl p-3"
-          >
-            <p className="text-sm text-blue-800">
-              📁 Currently in folder: <strong>{currentFolderName}</strong>
-            </p>
-          </motion.div>
-        )}
+        {/* Quick Categories - Larger */}
+        <div className="mb-10">
+          <h2 className="text-xl font-semibold text-slate-800 mb-5">Quick filters</h2>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            {categories.map((cat) => {
+              const Icon = cat.icon;
+              const isActive = selectedCategory === cat.name;
+              return (
+                <button
+                  key={cat.id}
+                  onClick={() => handleCategoryClick(cat)}
+                  className={`flex items-center space-x-4 p-5 rounded-xl border-2 transition-all ${
+                    isActive 
+                      ? 'bg-blue-50 border-blue-400 shadow-md' 
+                      : 'bg-white border-slate-200 hover:border-slate-300 hover:shadow-sm'
+                  }`}
+                >
+                  <div className={`p-3 rounded-xl ${cat.bgColor}`}>
+                    <Icon className={`h-7 w-7 bg-gradient-to-r ${cat.color} bg-clip-text text-transparent`} />
+                  </div>
+                  <span className={`text-lg ${isActive ? 'text-blue-700 font-semibold' : 'text-slate-700'}`}>{cat.name}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
 
-        {/* Folders Section */}
-        <FolderList
-          folders={folders}
-          currentFolderId={currentFolderId}
-          onFolderOpen={handleFolderOpen}
-          onFolderDeleted={handleDataChange}
-          onFolderRenamed={handleDataChange}
-        />
+        {/* Recent Files Section */}
+        <div className="mb-10">
+          <div className="flex items-center justify-between mb-5">
+            <h2 className="text-xl font-semibold text-slate-800">Recent files</h2>
+            <span className="text-sm text-slate-400">Last 5 files</span>
+          </div>
+          <FileList
+            refreshTrigger={refreshTrigger}
+            currentFolderId={null}
+            title=""
+            limit={5}
+            onFileDeleted={() => setRefreshTrigger(prev => prev + 1)}
+            onFileRenamed={() => setRefreshTrigger(prev => prev + 1)}
+          />
+        </div>
 
-        {/* Upload Section */}
-        <FileUploadBox onUploadSuccess={handleDataChange} currentFolderId={currentFolderId} />
-
-        {/* Files Section */}
-        <FileList
-          refreshTrigger={refreshTrigger}
-          currentFolderId={currentFolderId}
-          onFileDeleted={handleDataChange}
-          onFileRenamed={handleDataChange}
-        />
+        {/* All Files Section */}
+        <div>
+          <div className="flex items-center justify-between mb-5">
+            <h2 className="text-xl font-semibold text-slate-800">
+              {selectedCategory ? `${selectedCategory} (filtered)` : 'All files'}
+            </h2>
+            {selectedCategory && (
+              <button
+                onClick={clearFilter}
+                className="text-sm text-blue-600 hover:text-blue-700 font-medium"
+              >
+                Clear filter
+              </button>
+            )}
+          </div>
+          <FileList
+            refreshTrigger={refreshTrigger}
+            currentFolderId={null}
+            categoryFilter={categoryTypes}
+            title=""
+            onFileDeleted={() => setRefreshTrigger(prev => prev + 1)}
+            onFileRenamed={() => setRefreshTrigger(prev => prev + 1)}
+          />
+        </div>
       </div>
     </DashboardLayout>
   );

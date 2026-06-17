@@ -13,7 +13,6 @@ export async function GET(
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
-        // Await params to get id (Next.js 16 pattern)
         const { id } = await params;
 
         // Authenticate user
@@ -53,13 +52,39 @@ export async function GET(
             .from('files')
             .select('*')
             .eq('id', id)
-            .eq('owner_id', user.id)
             .single();
 
         if (dbError || !file) {
             return NextResponse.json(
                 { error: 'File not found' },
                 { status: 404 }
+            );
+        }
+
+        // Check if user has access (owner or shared with view/download permission)
+        let hasAccess = false;
+
+        // Check if user is owner
+        if (file.owner_id === user.id) {
+            hasAccess = true;
+        } else {
+            // Check if file is shared with user
+            const { data: share, error: shareError } = await supabase
+                .from('file_shares')
+                .select('permission')
+                .eq('file_id', id)
+                .eq('shared_with_user_id', user.id)
+                .single();
+
+            if (!shareError && share && (share.permission === 'view' || share.permission === 'download')) {
+                hasAccess = true;
+            }
+        }
+
+        if (!hasAccess) {
+            return NextResponse.json(
+                { error: 'Access denied. You do not have permission to view this file.' },
+                { status: 403 }
             );
         }
 
@@ -97,14 +122,16 @@ export async function GET(
             );
         }
 
-        // Log view activity
-        await supabase
-            .from('file_activity_logs')
-            .insert({
-                file_id: id,
-                user_id: user.id,
-                action: 'view'
-            });
+        // Log view activity (only if user is not the owner)
+        if (file.owner_id !== user.id) {
+            await supabase
+                .from('file_activity_logs')
+                .insert({
+                    file_id: id,
+                    user_id: user.id,
+                    action: 'view_shared'
+                });
+        }
 
         // Determine if inline display is possible
         const isImage = file.file_type.startsWith('image/');
@@ -114,8 +141,6 @@ export async function GET(
         
         const inlineTypes = isImage || isPdf || isVideo || isAudio;
         const disposition = inlineTypes ? 'inline' : 'attachment';
-
-        // Convert Node Buffer to Uint8Array for NextResponse body to satisfy typings
         const responseBody = new Uint8Array(decryptedBuffer);
 
         return new NextResponse(responseBody, {

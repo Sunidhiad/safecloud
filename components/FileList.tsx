@@ -2,9 +2,9 @@
 
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import { File as FileIcon, Search, Eye, Download, Edit2, Trash2, Star } from 'lucide-react';
+import { File, Star, Download, Trash2, Eye, Edit2, Share2 } from 'lucide-react';
 import { formatFileSize, getFileIcon } from '@/lib/files/fileTypes';
-import FileActions from './FileActions';
+import ShareModal from './ShareModal';
 
 interface FileType {
   id: string;
@@ -14,50 +14,45 @@ interface FileType {
   created_at: string;
   is_favorite: boolean;
   is_trashed: boolean;
+  owner_id?: string;
 }
 
 interface FileListProps {
   refreshTrigger: number;
   currentFolderId: string | null;
+  categoryFilter?: string[] | null;
+  title?: string;
+  limit?: number;
   onFileDeleted?: () => void;
   onFileRenamed?: () => void;
+  hideShare?: boolean;
 }
 
-export default function FileList({ refreshTrigger, currentFolderId, onFileDeleted, onFileRenamed }: FileListProps) {
+export default function FileList({ 
+  refreshTrigger, 
+  currentFolderId, 
+  categoryFilter,
+  limit,
+  onFileDeleted, 
+  onFileRenamed,
+  hideShare = false
+}: FileListProps) {
   const [files, setFiles] = useState<FileType[]>([]);
   const [loading, setLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState('');
   const [renamingFile, setRenamingFile] = useState<string | null>(null);
   const [newFileName, setNewFileName] = useState('');
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [shareModalFile, setShareModalFile] = useState<{id: string, name: string} | null>(null);
+  const [shares, setShares] = useState<any[]>([]);
   const supabase = createClient();
 
-  // Check authentication first
   useEffect(() => {
-    const checkAuth = async () => {
-      try {
-        const { data: { user } } = await supabase.auth.getUser();
-        setIsAuthenticated(!!user);
-      } catch (error) {
-        console.error('Auth check error:', error);
-        setIsAuthenticated(false);
-      }
-    };
-    checkAuth();
-  }, [supabase]);
-
-  // Load files only when authenticated
-  useEffect(() => {
-    if (isAuthenticated) {
-      loadFiles();
-    }
-  }, [refreshTrigger, currentFolderId, searchQuery, isAuthenticated]);
+    loadFiles();
+  }, [refreshTrigger, currentFolderId, categoryFilter]);
 
   const loadFiles = async () => {
     setLoading(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      
       if (!user) {
         setFiles([]);
         setLoading(false);
@@ -70,35 +65,46 @@ export default function FileList({ refreshTrigger, currentFolderId, onFileDelete
         .eq('owner_id', user.id)
         .eq('is_trashed', false);
 
-      // Filter by current folder
       if (currentFolderId === null) {
         query = query.is('folder_id', null);
       } else {
         query = query.eq('folder_id', currentFolderId);
       }
 
-      // Apply search filter
-      if (searchQuery && searchQuery.trim()) {
-        query = query.ilike('file_name', `%${searchQuery}%`);
+      if (categoryFilter && categoryFilter.length > 0) {
+        const extensions = categoryFilter.join('|');
+        query = query.or(`file_name.ilike.%.${extensions.split('|').join(',file_name.ilike.%.')}`);
       }
 
-      const { data, error } = await query.order('created_at', { ascending: false });
+      let { data, error } = await query.order('created_at', { ascending: false });
 
-      if (error) {
-        console.error('Error loading files:', error);
-        setFiles([]);
-      } else {
-        setFiles(data || []);
+      if (limit && data && data.length > limit) {
+        data = data.slice(0, limit);
       }
+
+      if (error) throw error;
+      setFiles(data || []);
     } catch (error) {
-      console.error('Error in loadFiles:', error);
+      console.error('Error loading files:', error);
       setFiles([]);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleRenameFile = async (fileId: string, newName: string) => {
+  const loadShares = async (fileId: string) => {
+    try {
+      const response = await fetch(`/api/files/share/${fileId}`);
+      const data = await response.json();
+      if (data.success) {
+        setShares(data.shares || []);
+      }
+    } catch (error) {
+      console.error('Error loading shares:', error);
+    }
+  };
+
+  const handleRename = async (fileId: string, newName: string) => {
     if (!newName.trim()) {
       alert('File name cannot be empty');
       return;
@@ -111,215 +117,211 @@ export default function FileList({ refreshTrigger, currentFolderId, onFileDelete
         body: JSON.stringify({ newFileName: newName })
       });
 
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'Rename failed');
-      }
+      if (!response.ok) throw new Error('Rename failed');
 
       await loadFiles();
       if (onFileRenamed) onFileRenamed();
       setRenamingFile(null);
     } catch (error: any) {
-      console.error('Rename error:', error);
       alert('Failed to rename file: ' + error.message);
     }
   };
 
   const handleFavorite = async (fileId: string, isFavorite: boolean) => {
-    try {
-      const response = await fetch(`/api/files/favorite/${fileId}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ isFavorite: !isFavorite })
-      });
-      
-      if (response.ok) {
-        await loadFiles();
-      } else {
-        const error = await response.json();
-        console.error('Favorite error:', error);
-      }
-    } catch (error: any) {
-      console.error('Favorite error:', error);
-    }
+    await fetch(`/api/files/favorite/${fileId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ isFavorite: !isFavorite })
+    });
+    await loadFiles();
   };
 
   const handleDelete = async (fileId: string, fileName: string) => {
     if (!confirm(`Move "${fileName}" to trash?`)) return;
-
-    try {
-      const response = await fetch(`/api/files/delete/${fileId}`, {
-        method: 'DELETE',
-      });
-      
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'Delete failed');
-      }
-      
+    const response = await fetch(`/api/files/delete/${fileId}`, { method: 'DELETE' });
+    if (response.ok) {
       await loadFiles();
       if (onFileDeleted) onFileDeleted();
-      alert(`"${fileName}" moved to trash`);
-    } catch (error: any) {
-      console.error('Delete error:', error);
-      alert('Failed to move file to trash: ' + error.message);
     }
   };
 
   const handleDownload = async (fileId: string, fileName: string) => {
     try {
       const response = await fetch(`/api/files/download/${fileId}`);
-      
-      if (!response.ok) {
-        throw new Error('Download failed');
-      }
-      
       const blob = await response.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
       a.download = fileName;
-      document.body.appendChild(a);
       a.click();
-      document.body.removeChild(a);
       URL.revokeObjectURL(url);
-    } catch (error: any) {
+    } catch (error) {
       console.error('Download error:', error);
-      alert('Failed to download file: ' + error.message);
+      alert('Failed to download file');
     }
   };
 
-  const handleView = (fileId: string, fileType: string) => {
+  const handleView = (fileId: string) => {
     window.open(`/api/files/view/${fileId}`, '_blank');
   };
 
-  if (!isAuthenticated) {
-    return null;
-  }
+  const handleShare = async (fileId: string, fileName: string) => {
+    setShareModalFile({ id: fileId, name: fileName });
+    await loadShares(fileId);
+  };
+
+  const handleShareSubmit = async (email: string, permission: string) => {
+    if (!shareModalFile) return;
+    
+    const response = await fetch(`/api/files/share/${shareModalFile.id}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, permission })
+    });
+    
+    const data = await response.json();
+    if (!data.success) throw new Error(data.error);
+    
+    // Refresh shares list
+    await loadShares(shareModalFile.id);
+  };
+
+  const handleRevokeShare = async (shareId: string) => {
+    if (!shareModalFile) return;
+    
+    const response = await fetch(`/api/files/share/${shareModalFile.id}`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sharedWithUserId: shareId })
+    });
+    
+    const data = await response.json();
+    if (!data.success) throw new Error(data.error);
+    
+    // Refresh shares list
+    await loadShares(shareModalFile.id);
+  };
 
   if (loading) {
     return (
-      <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6">
+      <div className="bg-white rounded-xl border border-slate-200 p-12">
         <div className="flex items-center justify-center py-12">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+          <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600"></div>
         </div>
       </div>
     );
   }
 
+  if (files.length === 0) {
+    return (
+      <div className="bg-white rounded-xl border border-slate-200 p-12 text-center">
+        <File className="h-16 w-16 text-slate-300 mx-auto mb-4" />
+        <p className="text-lg text-slate-500 font-medium">No files found</p>
+        <p className="text-base text-slate-400 mt-2">Upload your first file to get started</p>
+      </div>
+    );
+  }
+
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6">
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-lg font-semibold text-slate-900 flex items-center">
-          <FileIcon className="h-5 w-5 mr-2 text-blue-600" />
-          My Files
-        </h2>
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-slate-400" />
-          <input
-            type="text"
-            placeholder="Search files..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-9 pr-4 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
+    <>
+      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead className="bg-slate-50 border-b border-slate-200">
+              <tr>
+                <th className="px-6 py-4 text-left text-sm font-semibold text-slate-600">Name</th>
+                <th className="px-6 py-4 text-left text-sm font-semibold text-slate-600">Type</th>
+                <th className="px-6 py-4 text-left text-sm font-semibold text-slate-600">Size</th>
+                <th className="px-6 py-4 text-left text-sm font-semibold text-slate-600">Modified</th>
+                <th className="px-6 py-4 text-right text-sm font-semibold text-slate-600">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {files.map((file) => {
+                const isImage = file.file_type.startsWith('image/');
+                return (
+                  <tr key={file.id} className="hover:bg-slate-50 transition-colors">
+                    <td className="px-6 py-4">
+                      <div className="flex items-center space-x-3">
+                        {isImage ? (
+                          <img src={`/api/files/view/${file.id}`} alt="" className="w-10 h-10 rounded-lg object-cover" />
+                        ) : (
+                          <span className="text-3xl">{getFileIcon(file.file_name)}</span>
+                        )}
+                        {renamingFile === file.id ? (
+                          <input
+                            type="text"
+                            value={newFileName}
+                            onChange={(e) => setNewFileName(e.target.value)}
+                            onKeyPress={(e) => e.key === 'Enter' && handleRename(file.id, newFileName)}
+                            onBlur={() => setRenamingFile(null)}
+                            className="px-3 py-2 text-base border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            autoFocus
+                          />
+                        ) : (
+                          <span className="text-base font-medium text-slate-700 truncate max-w-md">{file.file_name}</span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 text-base text-slate-500">
+                      {file.file_type.split('/')[0] || 'file'}
+                    </td>
+                    <td className="px-6 py-4 text-base text-slate-500">
+                      {formatFileSize(file.file_size)}
+                    </td>
+                    <td className="px-6 py-4 text-base text-slate-500">
+                      {new Date(file.created_at).toLocaleDateString()}
+                    </td>
+                    <td className="px-6 py-4 text-right">
+                      <div className="flex items-center justify-end space-x-2">
+                        <button onClick={() => handleView(file.id)} className="p-2 text-slate-400 hover:text-blue-600 rounded-lg hover:bg-blue-50 transition-colors" title="View">
+                          <Eye className="h-5 w-5" />
+                        </button>
+                        <button onClick={() => handleDownload(file.id, file.file_name)} className="p-2 text-slate-400 hover:text-green-600 rounded-lg hover:bg-green-50 transition-colors" title="Download">
+                          <Download className="h-5 w-5" />
+                        </button>
+                        <button onClick={() => {
+                          setRenamingFile(file.id);
+                          setNewFileName(file.file_name);
+                        }} className="p-2 text-slate-400 hover:text-blue-600 rounded-lg hover:bg-blue-50 transition-colors" title="Rename">
+                          <Edit2 className="h-5 w-5" />
+                        </button>
+                        <button onClick={() => handleFavorite(file.id, file.is_favorite)} className={`p-2 rounded-lg transition-colors ${file.is_favorite ? 'text-yellow-500' : 'text-slate-400 hover:text-yellow-500'}`} title="Favorite">
+                          <Star className={`h-5 w-5 ${file.is_favorite ? 'fill-yellow-500' : ''}`} />
+                        </button>
+                        {!hideShare && (
+                          <button onClick={() => handleShare(file.id, file.file_name)} className="p-2 text-slate-400 hover:text-blue-600 rounded-lg hover:bg-blue-50 transition-colors" title="Share">
+                            <Share2 className="h-5 w-5" />
+                          </button>
+                        )}
+                        <button onClick={() => handleDelete(file.id, file.file_name)} className="p-2 text-slate-400 hover:text-red-600 rounded-lg hover:bg-red-50 transition-colors" title="Delete">
+                          <Trash2 className="h-5 w-5" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       </div>
 
-      {files.length === 0 ? (
-        <div className="text-center py-12">
-          <div className="w-20 h-20 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <FileIcon className="h-10 w-10 text-slate-400" />
-          </div>
-          <p className="text-slate-500 font-medium">No files in this folder</p>
-          <p className="text-sm text-slate-400 mt-1">
-            Upload your first file using the box above
-          </p>
-        </div>
-      ) : (
-        <div className="space-y-2">
-          {/* Header */}
-          <div className="hidden md:grid md:grid-cols-12 gap-4 px-4 py-2 text-xs font-medium text-slate-500 uppercase tracking-wider bg-slate-50 rounded-lg">
-            <div className="col-span-5">Name</div>
-            <div className="col-span-2">Size</div>
-            <div className="col-span-3">Uploaded</div>
-            <div className="col-span-2 text-right">Actions</div>
-          </div>
-
-          {/* File list */}
-          {files.map((file) => {
-            const isImage = file.file_type.startsWith('image/');
-            return (
-              <div
-                key={file.id}
-                className="grid grid-cols-1 md:grid-cols-12 gap-2 md:gap-4 items-center px-4 py-3 hover:bg-slate-50 rounded-lg transition-colors group"
-              >
-                <div className="col-span-5 flex items-center space-x-3">
-                  {isImage ? (
-                    <img
-                      src={`/api/files/view/${file.id}`}
-                      alt={file.file_name}
-                      className="w-8 h-8 rounded object-cover"
-                    />
-                  ) : (
-                    <span className="text-2xl">{getFileIcon(file.file_name)}</span>
-                  )}
-                  {renamingFile === file.id ? (
-                    <input
-                      type="text"
-                      value={newFileName}
-                      onChange={(e) => setNewFileName(e.target.value)}
-                      onKeyPress={(e) => {
-                        if (e.key === 'Enter') {
-                          handleRenameFile(file.id, newFileName);
-                        }
-                      }}
-                      onBlur={() => setRenamingFile(null)}
-                      className="flex-1 px-2 py-1 border border-slate-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      autoFocus
-                    />
-                  ) : (
-                    <div>
-                      <p className="font-medium text-slate-900 text-sm truncate max-w-xs">
-                        {file.file_name}
-                      </p>
-                      <p className="text-xs text-slate-500 md:hidden">
-                        {formatFileSize(file.file_size)} • {new Date(file.created_at).toLocaleDateString()}
-                      </p>
-                    </div>
-                  )}
-                </div>
-                <div className="hidden md:block col-span-2 text-sm text-slate-600">
-                  {formatFileSize(file.file_size)}
-                </div>
-                <div className="hidden md:block col-span-3 text-sm text-slate-600">
-                  {new Date(file.created_at).toLocaleDateString()}
-                </div>
-                <div className="col-span-2 flex items-center justify-end">
-                  {renamingFile !== file.id && (
-                    <FileActions
-                      onView={() => handleView(file.id, file.file_type)}
-                      onDownload={() => handleDownload(file.id, file.file_name)}
-                      onRename={() => {
-                        setRenamingFile(file.id);
-                        setNewFileName(file.file_name);
-                      }}
-                      onDelete={() => handleDelete(file.id, file.file_name)}
-                      onFavorite={() => handleFavorite(file.id, file.is_favorite)}
-                      isFavorite={file.is_favorite}
-                    />
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
+      {/* Share Modal */}
+      {shareModalFile && (
+        <ShareModal
+          fileId={shareModalFile.id}
+          fileName={shareModalFile.name}
+          isOpen={true}
+          onClose={() => {
+            setShareModalFile(null);
+            setShares([]);
+          }}
+          onShare={handleShareSubmit}
+          existingShares={shares}
+          onRevoke={handleRevokeShare}
+        />
       )}
-
-      {/* Stats */}
-      <div className="mt-4 pt-4 border-t text-xs text-slate-500">
-        {files.length} file{files.length !== 1 ? 's' : ''}
-      </div>
-    </div>
+    </>
   );
 }

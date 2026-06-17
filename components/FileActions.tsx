@@ -1,6 +1,6 @@
 'use client';
 
-import { Edit2, Trash2, Download, Star, Eye } from 'lucide-react';
+import { Edit2, Trash2, Download, Star, Eye, Share2 } from 'lucide-react';
 
 interface FileActionsProps {
   onView: () => void;
@@ -8,7 +8,9 @@ interface FileActionsProps {
   onRename: () => void;
   onDelete: () => void;
   onFavorite: () => void;
+  onShare: () => void;
   isFavorite: boolean;
+  showShare?: boolean;
 }
 
 export default function FileActions({ 
@@ -17,7 +19,9 @@ export default function FileActions({
   onRename, 
   onDelete, 
   onFavorite, 
-  isFavorite 
+  onShare,
+  isFavorite,
+  showShare = true
 }: FileActionsProps) {
   return (
     <div className="flex items-center space-x-1">
@@ -53,6 +57,15 @@ export default function FileActions({
       >
         <Star className={`h-4 w-4 ${isFavorite ? 'fill-yellow-500' : ''}`} />
       </button>
+      {showShare && (
+        <button
+          onClick={onShare}
+          className="p-2 text-gray-400 hover:text-blue-600 rounded-lg hover:bg-blue-50 transition-colors"
+          title="Share"
+        >
+          <Share2 className="h-4 w-4" />
+        </button>
+      )}
       <button
         onClick={onDelete}
         className="p-2 text-gray-400 hover:text-red-600 rounded-lg hover:bg-red-50 transition-colors"

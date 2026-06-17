@@ -21,7 +21,6 @@ import {
   LogIn,
   UserPlus,
   CheckCircle,
-  Brain,
   Image,
   Activity,
   Crown,
@@ -50,37 +49,43 @@ export default function Home() {
       icon: Lock,
       title: 'Secure Uploads',
       description: 'End-to-end encryption keeps your files safe',
-      color: 'from-blue-500 to-blue-600'
+      color: 'from-blue-500 to-blue-600',
+      gradient: 'bg-gradient-to-br from-blue-500/10 to-blue-600/5'
     },
     {
       icon: FolderTree,
       title: 'Folder Organization',
       description: 'Organize files with nested folders',
-      color: 'from-emerald-500 to-emerald-600'
+      color: 'from-emerald-500 to-emerald-600',
+      gradient: 'bg-gradient-to-br from-emerald-500/10 to-emerald-600/5'
     },
     {
-      icon: Brain,
-      title: 'AI Content Search',
+      icon: Search,
+      title: 'Content Search',
       description: 'Search inside documents and files',
-      color: 'from-purple-500 to-purple-600'
+      color: 'from-purple-500 to-purple-600',
+      gradient: 'bg-gradient-to-br from-purple-500/10 to-purple-600/5'
     },
     {
       icon: Image,
       title: 'Image Search by Tags',
       description: 'Find images by colors and tags',
-      color: 'from-pink-500 to-pink-600'
+      color: 'from-pink-500 to-pink-600',
+      gradient: 'bg-gradient-to-br from-pink-500/10 to-pink-600/5'
     },
     {
       icon: Share2,
       title: 'Sharing & Permissions',
       description: 'Share files with granular controls',
-      color: 'from-orange-500 to-orange-600'
+      color: 'from-orange-500 to-orange-600',
+      gradient: 'bg-gradient-to-br from-orange-500/10 to-orange-600/5'
     },
     {
       icon: Activity,
       title: 'Activity Tracking',
       description: 'Track file views and downloads',
-      color: 'from-cyan-500 to-cyan-600'
+      color: 'from-cyan-500 to-cyan-600',
+      gradient: 'bg-gradient-to-br from-cyan-500/10 to-cyan-600/5'
     },
   ];
 
@@ -97,7 +102,7 @@ export default function Home() {
       name: 'Student',
       price: '$4.99',
       description: 'For students and educators',
-      features: ['50 GB Storage', 'AI-Powered Search', 'Image Search', 'Priority Support'],
+      features: ['50 GB Storage', 'Content Search', 'Image Search', 'Priority Support'],
       icon: GraduationCap,
       color: 'from-blue-500 to-indigo-600',
       popular: true
@@ -106,7 +111,7 @@ export default function Home() {
       name: 'Team',
       price: '$9.99',
       description: 'For teams and businesses',
-      features: ['200 GB Storage', 'Advanced AI Search', 'Team Sharing', 'Analytics Dashboard'],
+      features: ['200 GB Storage', 'Advanced Search', 'Team Sharing', 'Analytics Dashboard'],
       icon: Users,
       color: 'from-purple-500 to-pink-600'
     },
@@ -196,16 +201,16 @@ export default function Home() {
           >
             <div className="inline-flex items-center px-3 py-1 rounded-full bg-white/10 backdrop-blur-sm border border-white/20 mb-6">
               <Sparkles className="h-4 w-4 text-yellow-400 mr-2" />
-              <span className="text-sm text-white/90">Introducing AI-Powered Cloud Storage</span>
+              <span className="text-sm text-white/90">Secure Cloud Storage</span>
             </div>
             
             <h1 className="text-5xl lg:text-7xl font-bold text-white mb-6 leading-tight">
               Secure Cloud Storage<br />
-              <span className="bg-gradient-to-r from-blue-400 to-indigo-400 bg-clip-text text-transparent">With AI-Powered Search</span>
+              <span className="bg-gradient-to-r from-blue-400 to-indigo-400 bg-clip-text text-transparent">With Smart Search</span>
             </h1>
             
             <p className="text-xl text-white/70 mb-12 max-w-2xl mx-auto">
-              Store, organize, search and share your files securely with intelligent content discovery and enterprise-grade encryption.
+              Store, organize, search and share your files securely with enterprise-grade encryption and intelligent discovery.
             </p>
             
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
@@ -250,9 +255,9 @@ export default function Home() {
                   whileInView={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.5, delay: index * 0.1 }}
                   viewport={{ once: true }}
-                  className="group p-6 rounded-2xl bg-gradient-to-br from-slate-50 to-slate-100/50 border border-slate-200 hover:shadow-xl transition-all duration-300"
+                  className={`group p-6 rounded-2xl ${feature.gradient} border border-slate-200 hover:shadow-xl transition-all duration-300`}
                 >
-                  <div className={`w-12 h-12 bg-gradient-to-r ${feature.color} rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform`}>
+                  <div className={`w-12 h-12 ${feature.color} rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform`}>
                     <Icon className="h-6 w-6 text-white" />
                   </div>
                   <h3 className="text-xl font-semibold text-slate-900 mb-2">{feature.title}</h3>
@@ -357,18 +362,18 @@ export default function Home() {
                 </li>
                 <li className="flex items-center">
                   <Database className="h-5 w-5 text-blue-600 mr-3" />
-                  <span className="text-slate-700">Secure local storage with OpenStack ready</span>
+                  <span className="text-slate-700">Secure private storage server</span>
                 </li>
                 <li className="flex items-center">
                   <Users className="h-5 w-5 text-blue-600 mr-3" />
-                  <span className="text-slate-700">Granular permission controls (Coming Soon)</span>
+                  <span className="text-slate-700">Granular permission controls</span>
                 </li>
               </ul>
             </div>
             <div className="bg-gradient-to-br from-slate-100 to-indigo-50 rounded-2xl p-8 text-center">
               <Shield className="h-16 w-16 text-blue-600 mx-auto mb-4" />
               <p className="text-slate-600 italic">
-                "SafeCloud provides the security I need for my sensitive documents. The AI search is a game-changer!"
+                "SafeCloud provides the security I need for my sensitive documents."
               </p>
               <div className="mt-4">
                 <div className="font-semibold text-slate-900">- Verified User</div>
@@ -384,7 +389,7 @@ export default function Home() {
         <div className="container mx-auto px-6 text-center">
           <h2 className="text-4xl font-bold text-white mb-4">Ready to Get Started?</h2>
           <p className="text-xl text-white/90 mb-8 max-w-2xl mx-auto">
-            Join thousands of users who trust SafeCloud for their secure storage needs
+            Join users who trust SafeCloud for their secure storage needs
           </p>
           <Link
             href="/auth/signup"
@@ -406,7 +411,7 @@ export default function Home() {
                 <span className="text-xl font-bold">SafeCloud</span>
               </div>
               <p className="text-slate-400 text-sm">
-                Secure cloud storage with AI-powered search.
+                Secure cloud storage with smart search.
               </p>
             </div>
             <div>
@@ -435,7 +440,7 @@ export default function Home() {
             </div>
           </div>
           <div className="border-t border-slate-800 mt-8 pt-8 text-center text-sm text-slate-400">
-            <p>&copy; 2024 SafeCloud. All rights reserved.</p>
+            <p>&copy; 2025 SafeCloud. All rights reserved.</p>
           </div>
         </div>
       </footer>

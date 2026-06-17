@@ -13,10 +13,9 @@ export async function GET(
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
-        // Await params to get id (Next.js 16 pattern)
         const { id } = await params;
 
-        // 1. Authenticate user
+        // Authenticate user
         const cookieStore = await cookies();
         const supabase = createServerClient(
             process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -48,12 +47,11 @@ export async function GET(
             );
         }
 
-        // 2. Get file metadata from Supabase
+        // Get file metadata
         const { data: file, error: dbError } = await supabase
             .from('files')
             .select('*')
             .eq('id', id)
-            .eq('owner_id', user.id)
             .single();
 
         if (dbError || !file) {
@@ -63,7 +61,34 @@ export async function GET(
             );
         }
 
-        // 3. Fetch encrypted file from storage server
+        // Check if user has access (owner or shared with download permission)
+        let hasAccess = false;
+
+        // Check if user is owner
+        if (file.owner_id === user.id) {
+            hasAccess = true;
+        } else {
+            // Check if file is shared with user with download permission
+            const { data: share, error: shareError } = await supabase
+                .from('file_shares')
+                .select('permission')
+                .eq('file_id', id)
+                .eq('shared_with_user_id', user.id)
+                .single();
+
+            if (!shareError && share && share.permission === 'download') {
+                hasAccess = true;
+            }
+        }
+
+        if (!hasAccess) {
+            return NextResponse.json(
+                { error: 'Access denied. You need download permission.' },
+                { status: 403 }
+            );
+        }
+
+        // Fetch encrypted file from storage server
         const fetchResponse = await fetch(`${STORAGE_SERVER_URL}/files/${file.object_key}`, {
             method: 'GET',
             headers: {
@@ -78,10 +103,10 @@ export async function GET(
             );
         }
 
-        // 4. Get encrypted buffer
+        // Get encrypted buffer
         const encryptedBuffer = Buffer.from(await fetchResponse.arrayBuffer());
 
-        // 5. Decrypt the file
+        // Decrypt the file
         let decryptedBuffer: Buffer;
         try {
             decryptedBuffer = await decryptBuffer(
@@ -97,27 +122,25 @@ export async function GET(
             );
         }
 
-        // 6. Log download activity
+        // Log download activity
         await supabase
             .from('file_activity_logs')
             .insert({
                 file_id: id,
                 user_id: user.id,
-                action: 'download'
+                action: file.owner_id === user.id ? 'download' : 'download_shared'
             });
 
-        // 7. Return decrypted file
+        // Return decrypted file
         const encodedFileName = encodeURIComponent(file.file_name);
+        const responseBody = new Uint8Array(decryptedBuffer);
 
-        // Convert Node Buffer to Uint8Array for Response body compatibility
-        const body = new Uint8Array(decryptedBuffer);
-
-        return new NextResponse(body, {
+        return new NextResponse(responseBody, {
             status: 200,
             headers: {
                 'Content-Type': file.file_type,
                 'Content-Disposition': `attachment; filename="${encodedFileName}"; filename*=UTF-8''${encodedFileName}`,
-                'Content-Length': body.byteLength.toString(),
+                'Content-Length': responseBody.length.toString(),
                 'Cache-Control': 'private, no-cache, no-store, must-revalidate',
             },
         });
