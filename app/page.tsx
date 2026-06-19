@@ -373,7 +373,7 @@ export default function Home() {
             <div className="bg-gradient-to-br from-slate-100 to-indigo-50 rounded-2xl p-8 text-center">
               <Shield className="h-16 w-16 text-blue-600 mx-auto mb-4" />
               <p className="text-slate-600 italic">
-                "SafeCloud provides the security I need for my sensitive documents."
+                "SafeCloud provides the security I need for my sensitive documents"
               </p>
               <div className="mt-4">
                 <div className="font-semibold text-slate-900">- Verified User</div>

@@ -158,22 +158,13 @@ export async function POST(request: NextRequest) {
         const objectKey = `safecloud/${user.id}/${folderPath}/${timestamp}-${safeFileName}.enc`;
         console.log(`📦 Object key generated: ${objectKey}`);
 
-        // 8. Upload encrypted file to storage server
+        // 8. Upload encrypted file to storage server with ngrok header
         console.log(`📤 Sending to storage server: ${STORAGE_SERVER_URL}/upload`);
         
         let uploadResponse: Response;
         try {
-            // Create form data with proper Blob for Node.js fetch
             const uploadFormData = new FormData();
-            
-            // Convert Buffer to an ArrayBuffer slice and create Blob
-            const arrayBuffer = encryptedBuffer.buffer.slice(
-                encryptedBuffer.byteOffset,
-                encryptedBuffer.byteOffset + encryptedBuffer.byteLength
-            );
-            // Create a Uint8Array view so Blob receives an ArrayBufferView (avoids SharedArrayBuffer typing issue)
-            const uint8 = new Uint8Array(arrayBuffer as ArrayBuffer);
-            const blob = new Blob([uint8], { type: 'application/octet-stream' });
+            const blob = new Blob([new Uint8Array(encryptedBuffer)], { type: 'application/octet-stream' });
             uploadFormData.append('file', blob, objectKey);
             uploadFormData.append('objectKey', objectKey);
 
@@ -184,6 +175,7 @@ export async function POST(request: NextRequest) {
                 method: 'POST',
                 headers: {
                     'x-storage-secret': STORAGE_SERVER_SECRET,
+                    'ngrok-skip-browser-warning': 'true',
                 },
                 body: uploadFormData
             });
@@ -200,13 +192,16 @@ export async function POST(request: NextRequest) {
         if (!uploadResponse.ok) {
             let errorMessage: string;
             try {
-                const errorText = await uploadResponse.text();
-                console.error('❌ Storage server error response:', errorText);
+                const responseText = await uploadResponse.text();
+                console.error('❌ Storage server error response:', responseText);
+                
+                // Try to parse as JSON, if not, use the text
                 try {
-                    const errorJson = JSON.parse(errorText);
+                    const errorJson = JSON.parse(responseText);
                     errorMessage = errorJson.error || errorJson.message || 'Storage server upload failed';
                 } catch {
-                    errorMessage = errorText.substring(0, 200);
+                    // If it's HTML or plain text, use the first 200 chars
+                    errorMessage = responseText.substring(0, 200);
                 }
             } catch (readError) {
                 errorMessage = `Storage server returned status ${uploadResponse.status}`;
@@ -218,8 +213,18 @@ export async function POST(request: NextRequest) {
             );
         }
         
-        const storageResponse = await uploadResponse.json();
-        console.log('✅ File uploaded to storage server successfully', storageResponse);
+        let storageResponseData;
+        try {
+            const responseText = await uploadResponse.text();
+            storageResponseData = JSON.parse(responseText);
+            console.log('✅ File uploaded to storage server successfully', storageResponseData);
+        } catch (parseError) {
+            console.error('❌ Failed to parse storage server response:', parseError);
+            return NextResponse.json(
+                { error: 'Storage server returned invalid response' },
+                { status: 500 }
+            );
+        }
 
         // 9. Save metadata to Supabase
         console.log('💾 Saving metadata to Supabase...');
@@ -254,7 +259,10 @@ export async function POST(request: NextRequest) {
             try {
                 await fetch(`${STORAGE_SERVER_URL}/files/${objectKey}`, {
                     method: 'DELETE',
-                    headers: { 'x-storage-secret': STORAGE_SERVER_SECRET }
+                    headers: { 
+                        'x-storage-secret': STORAGE_SERVER_SECRET,
+                        'ngrok-skip-browser-warning': 'true',
+                    }
                 });
                 console.log('🗑️ Rollback: Deleted from storage server');
             } catch (deleteError) {
