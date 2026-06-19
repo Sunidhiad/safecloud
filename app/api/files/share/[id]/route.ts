@@ -74,7 +74,7 @@ export async function POST(
             );
         }
 
-        // Find the user to share with
+        // Find the user to share with by email
         const { data: sharedUser, error: userFindError } = await supabase
             .from('profiles')
             .select('id, email')
@@ -82,8 +82,9 @@ export async function POST(
             .single();
 
         if (userFindError || !sharedUser) {
+            console.error('User not found:', userFindError);
             return NextResponse.json(
-                { error: 'User with this email not found' },
+                { error: 'User with this email not found. Make sure they have signed up.' },
                 { status: 404 }
             );
         }
@@ -138,6 +139,7 @@ export async function POST(
             });
 
         if (shareError) {
+            console.error('Share error:', shareError);
             return NextResponse.json(
                 { error: 'Failed to share file: ' + shareError.message },
                 { status: 500 }
