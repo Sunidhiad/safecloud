@@ -15,6 +15,15 @@ export async function GET(
     try {
         const { id } = await params;
 
+        // Validate UUID format
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        if (!uuidRegex.test(id)) {
+            return NextResponse.json(
+                { error: 'Invalid file ID format' },
+                { status: 400 }
+            );
+        }
+
         // Authenticate user
         const cookieStore = await cookies();
         const supabase = createServerClient(
@@ -63,10 +72,12 @@ export async function GET(
 
         // Check if user has access (owner or shared with view/download permission)
         let hasAccess = false;
+        let permissionType = '';
 
         // Check if user is owner
         if (file.owner_id === user.id) {
             hasAccess = true;
+            permissionType = 'owner';
         } else {
             // Check if file is shared with user
             const { data: share, error: shareError } = await supabase
@@ -76,8 +87,11 @@ export async function GET(
                 .eq('shared_with_user_id', user.id)
                 .single();
 
-            if (!shareError && share && (share.permission === 'view' || share.permission === 'download')) {
-                hasAccess = true;
+            if (!shareError && share) {
+                if (share.permission === 'view' || share.permission === 'download') {
+                    hasAccess = true;
+                    permissionType = share.permission;
+                }
             }
         }
 
@@ -89,22 +103,55 @@ export async function GET(
         }
 
         // Fetch encrypted file from storage server
-        const fetchResponse = await fetch(`${STORAGE_SERVER_URL}/files/${file.object_key}`, {
-            method: 'GET',
-            headers: {
-                'x-storage-secret': STORAGE_SERVER_SECRET
-            }
-        });
+        let fetchResponse: Response;
+        try {
+            fetchResponse = await fetch(`${STORAGE_SERVER_URL}/files/${file.object_key}`, {
+                method: 'GET',
+                headers: {
+                    'x-storage-secret': STORAGE_SERVER_SECRET,
+                    'ngrok-skip-browser-warning': 'true',
+                }
+            });
+        } catch (fetchError) {
+            console.error('Storage server fetch error:', fetchError);
+            return NextResponse.json(
+                { error: 'Failed to connect to storage server' },
+                { status: 503 }
+            );
+        }
 
         if (!fetchResponse.ok) {
+            let errorMessage = `Storage server returned status ${fetchResponse.status}`;
+            try {
+                const text = await fetchResponse.text();
+                console.error('Storage server error:', text);
+                try {
+                    const json = JSON.parse(text);
+                    errorMessage = json.error || json.message || errorMessage;
+                } catch {
+                    errorMessage = text.substring(0, 200);
+                }
+            } catch (e) {
+                // Use default message
+            }
             return NextResponse.json(
-                { error: 'Failed to fetch file from storage server' },
-                { status: 500 }
+                { error: errorMessage },
+                { status: fetchResponse.status }
             );
         }
 
         // Get encrypted buffer
-        const encryptedBuffer = Buffer.from(await fetchResponse.arrayBuffer());
+        let encryptedBuffer: Buffer;
+        try {
+            const arrayBuffer = await fetchResponse.arrayBuffer();
+            encryptedBuffer = Buffer.from(arrayBuffer);
+        } catch (bufferError) {
+            console.error('Buffer conversion error:', bufferError);
+            return NextResponse.json(
+                { error: 'Failed to read file from storage' },
+                { status: 500 }
+            );
+        }
 
         // Decrypt the file
         let decryptedBuffer: Buffer;
@@ -123,38 +170,44 @@ export async function GET(
         }
 
         // Log view activity (only if user is not the owner)
-        if (file.owner_id !== user.id) {
-            await supabase
-                .from('file_activity_logs')
-                .insert({
-                    file_id: id,
-                    user_id: user.id,
-                    action: 'view_shared'
-                });
+        try {
+            if (file.owner_id !== user.id) {
+                await supabase
+                    .from('file_activity_logs')
+                    .insert({
+                        file_id: id,
+                        user_id: user.id,
+                        action: 'view_shared'
+                    });
+            }
+        } catch (logError) {
+            console.warn('Failed to log activity:', logError);
+            // Don't fail the request for logging errors
         }
 
         // Determine if inline display is possible
-        const isImage = file.file_type.startsWith('image/');
+        const isImage = file.file_type?.startsWith('image/') || false;
         const isPdf = file.file_type === 'application/pdf';
-        const isVideo = file.file_type.startsWith('video/');
-        const isAudio = file.file_type.startsWith('audio/');
+        const isVideo = file.file_type?.startsWith('video/') || false;
+        const isAudio = file.file_type?.startsWith('audio/') || false;
         
         const inlineTypes = isImage || isPdf || isVideo || isAudio;
         const disposition = inlineTypes ? 'inline' : 'attachment';
-        const responseBody = new Uint8Array(decryptedBuffer);
 
-        return new NextResponse(responseBody, {
+        // Return the decrypted file
+        return new NextResponse(new Uint8Array(decryptedBuffer), {
             status: 200,
             headers: {
-                'Content-Type': file.file_type,
+                'Content-Type': file.file_type || 'application/octet-stream',
                 'Content-Disposition': `${disposition}; filename="${encodeURIComponent(file.file_name)}"`,
                 'Cache-Control': 'public, max-age=31536000',
+                'Content-Length': decryptedBuffer.length.toString(),
             },
         });
     } catch (error) {
         console.error('View API error:', error);
         return NextResponse.json(
-            { error: 'Failed to view file' },
+            { error: error instanceof Error ? error.message : 'Internal server error' },
             { status: 500 }
         );
     }

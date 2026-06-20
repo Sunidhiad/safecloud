@@ -15,6 +15,15 @@ export async function GET(
     try {
         const { id } = await params;
 
+        // Validate UUID format
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        if (!uuidRegex.test(id)) {
+            return NextResponse.json(
+                { error: 'Invalid file ID format' },
+                { status: 400 }
+            );
+        }
+
         // Authenticate user
         const cookieStore = await cookies();
         const supabase = createServerClient(
@@ -63,10 +72,12 @@ export async function GET(
 
         // Check if user has access (owner or shared with download permission)
         let hasAccess = false;
+        let permissionType = '';
 
         // Check if user is owner
         if (file.owner_id === user.id) {
             hasAccess = true;
+            permissionType = 'owner';
         } else {
             // Check if file is shared with user with download permission
             const { data: share, error: shareError } = await supabase
@@ -78,6 +89,7 @@ export async function GET(
 
             if (!shareError && share && share.permission === 'download') {
                 hasAccess = true;
+                permissionType = 'download';
             }
         }
 
@@ -89,22 +101,55 @@ export async function GET(
         }
 
         // Fetch encrypted file from storage server
-        const fetchResponse = await fetch(`${STORAGE_SERVER_URL}/files/${file.object_key}`, {
-            method: 'GET',
-            headers: {
-                'x-storage-secret': STORAGE_SERVER_SECRET
-            }
-        });
+        let fetchResponse: Response;
+        try {
+            fetchResponse = await fetch(`${STORAGE_SERVER_URL}/files/${file.object_key}`, {
+                method: 'GET',
+                headers: {
+                    'x-storage-secret': STORAGE_SERVER_SECRET,
+                    'ngrok-skip-browser-warning': 'true',
+                }
+            });
+        } catch (fetchError) {
+            console.error('Storage server fetch error:', fetchError);
+            return NextResponse.json(
+                { error: 'Failed to connect to storage server' },
+                { status: 503 }
+            );
+        }
 
         if (!fetchResponse.ok) {
+            let errorMessage = `Storage server returned status ${fetchResponse.status}`;
+            try {
+                const text = await fetchResponse.text();
+                console.error('Storage server error:', text);
+                try {
+                    const json = JSON.parse(text);
+                    errorMessage = json.error || json.message || errorMessage;
+                } catch {
+                    errorMessage = text.substring(0, 200);
+                }
+            } catch (e) {
+                // Use default message
+            }
             return NextResponse.json(
-                { error: 'Failed to fetch encrypted file from storage server' },
-                { status: 500 }
+                { error: errorMessage },
+                { status: fetchResponse.status }
             );
         }
 
         // Get encrypted buffer
-        const encryptedBuffer = Buffer.from(await fetchResponse.arrayBuffer());
+        let encryptedBuffer: Buffer;
+        try {
+            const arrayBuffer = await fetchResponse.arrayBuffer();
+            encryptedBuffer = Buffer.from(arrayBuffer);
+        } catch (bufferError) {
+            console.error('Buffer conversion error:', bufferError);
+            return NextResponse.json(
+                { error: 'Failed to read file from storage' },
+                { status: 500 }
+            );
+        }
 
         // Decrypt the file
         let decryptedBuffer: Buffer;
@@ -123,24 +168,28 @@ export async function GET(
         }
 
         // Log download activity
-        await supabase
-            .from('file_activity_logs')
-            .insert({
-                file_id: id,
-                user_id: user.id,
-                action: file.owner_id === user.id ? 'download' : 'download_shared'
-            });
+        try {
+            await supabase
+                .from('file_activity_logs')
+                .insert({
+                    file_id: id,
+                    user_id: user.id,
+                    action: file.owner_id === user.id ? 'download' : 'download_shared'
+                });
+        } catch (logError) {
+            console.warn('Failed to log activity:', logError);
+            // Don't fail the request for logging errors
+        }
 
-        // Return decrypted file
+        // Return the decrypted file
         const encodedFileName = encodeURIComponent(file.file_name);
         const responseBody = new Uint8Array(decryptedBuffer);
-
         return new NextResponse(responseBody, {
             status: 200,
             headers: {
-                'Content-Type': file.file_type,
+                'Content-Type': file.file_type || 'application/octet-stream',
                 'Content-Disposition': `attachment; filename="${encodedFileName}"; filename*=UTF-8''${encodedFileName}`,
-                'Content-Length': responseBody.length.toString(),
+                'Content-Length': decryptedBuffer.length.toString(),
                 'Cache-Control': 'private, no-cache, no-store, must-revalidate',
             },
         });

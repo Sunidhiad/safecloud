@@ -39,10 +39,13 @@ export default function CreateFolderButton({ parentFolderId, onFolderCreated }: 
         .insert({
           name: folderName.trim(),
           owner_id: user.id,
-          parent_folder_id: parentFolderId, // Use current folder as parent
+          parent_folder_id: parentFolderId,
         });
 
-      if (insertError) throw insertError;
+      if (insertError) {
+        console.error('Insert error:', insertError);
+        throw new Error(insertError.message);
+      }
 
       setFolderName('');
       setIsModalOpen(false);
@@ -58,7 +61,7 @@ export default function CreateFolderButton({ parentFolderId, onFolderCreated }: 
     <>
       <button
         onClick={() => setIsModalOpen(true)}
-        className="inline-flex items-center px-4 py-2 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-lg hover:from-green-600 hover:to-green-700 transition-all"
+        className="inline-flex items-center px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-lg text-sm font-medium hover:from-blue-700 hover:to-indigo-700 transition-all"
       >
         <FolderPlus className="h-4 w-4 mr-2" />
         New Folder

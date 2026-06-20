@@ -28,7 +28,10 @@ export default function Breadcrumb({ items, onNavigate }: BreadcrumbProps) {
             disabled={index === items.length - 1}
           >
             {index === 0 ? (
-              <Home className="h-4 w-4" />
+              <>
+                <Home className="h-4 w-4" />
+                <span>Root</span>
+              </>
             ) : (
               <span>{item.name}</span>
             )}

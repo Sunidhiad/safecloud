@@ -37,17 +37,10 @@ export async function GET(request: NextRequest) {
             );
         }
 
-        // Get files shared with the user - using a simpler query
+        // Get files shared with the user - using a simpler, more reliable query
         const { data: shares, error: sharesError } = await supabase
             .from('file_shares')
-            .select(`
-                id,
-                permission,
-                created_at,
-                shared_with_email,
-                file_id,
-                owner_id
-            `)
+            .select('*')
             .eq('shared_with_user_id', user.id);
 
         if (sharesError) {
@@ -70,7 +63,8 @@ export async function GET(request: NextRequest) {
         const { data: files, error: filesError } = await supabase
             .from('files')
             .select('*')
-            .in('id', fileIds);
+            .in('id', fileIds)
+            .eq('is_trashed', false);
 
         if (filesError) {
             console.error('Files error:', filesError);
@@ -80,7 +74,7 @@ export async function GET(request: NextRequest) {
             );
         }
 
-        // Get owner emails
+        // Get owner emails for the files
         const ownerIds = shares.map(s => s.owner_id);
         const { data: profiles, error: profilesError } = await supabase
             .from('profiles')
@@ -100,23 +94,32 @@ export async function GET(request: NextRequest) {
             });
         }
 
+        // Create a map of file permissions
+        const filePermissionMap: Record<string, string> = {};
+        shares.forEach(share => {
+            filePermissionMap[share.file_id] = share.permission;
+        });
+
+        // Create a map of share created_at
+        const shareCreatedMap: Record<string, string> = {};
+        shares.forEach(share => {
+            shareCreatedMap[share.file_id] = share.created_at;
+        });
+
         // Format the response
-        const sharedFiles = shares.map(share => {
-            const file = files?.find(f => f.id === share.file_id);
-            if (!file) return null;
-            
+        const sharedFiles = files.map(file => {
             return {
-                shareId: share.id,
+                shareId: shares.find(s => s.file_id === file.id)?.id || '',
                 fileId: file.id,
                 fileName: file.file_name,
                 fileType: file.file_type,
                 fileSize: file.file_size,
                 uploadedAt: file.created_at,
-                ownerEmail: ownerEmailMap[share.owner_id] || share.shared_with_email || 'Unknown',
-                permission: share.permission,
-                sharedAt: share.created_at
+                ownerEmail: ownerEmailMap[file.owner_id] || 'Unknown',
+                permission: filePermissionMap[file.id] || 'view',
+                sharedAt: shareCreatedMap[file.id] || file.created_at
             };
-        }).filter(Boolean);
+        });
 
         return NextResponse.json({
             success: true,
