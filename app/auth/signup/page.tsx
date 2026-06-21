@@ -116,7 +116,7 @@ export default function SignupPage() {
             </div>
             <div className="flex items-center space-x-2">
               <Server className="h-5 w-5" />
-              <span className="text-sm">OpenStack Powered</span>
+              
             </div>
           </div>
         </div>

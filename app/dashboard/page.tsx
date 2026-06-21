@@ -7,6 +7,7 @@ import FileList from '@/components/FileList';
 import FolderList from '@/components/FolderList';
 import CreateFolderButton from '@/components/CreateFolderButton';
 import Breadcrumb from '@/components/Breadcrumb';
+import FileUploadBox from '@/components/FileUploadBox';
 import { createClient } from '@/lib/supabase/client';
 import { 
   HardDrive, 
@@ -17,8 +18,6 @@ import {
   Video,
   Music,
   FileText,
-  Upload,
-  Plus,
   TrendingUp,
   ArrowLeft
 } from 'lucide-react';
@@ -51,7 +50,6 @@ export default function DashboardPage() {
   const [folders, setFolders] = useState<FolderType[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [categoryTypes, setCategoryTypes] = useState<string[] | null>(null);
-  const [uploading, setUploading] = useState(false);
   const [stats, setStats] = useState({ totalFiles: 0, totalSize: 0, totalFolders: 0 });
   const supabase = createClient();
 
@@ -206,7 +204,7 @@ export default function DashboardPage() {
           })}
         </div>
 
-        {/* Navigation Bar - Folder Creation Button Added Here */}
+        {/* Navigation Bar - Folder Creation Button */}
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center space-x-3">
             {folderPath.length > 1 && (
@@ -234,15 +232,12 @@ export default function DashboardPage() {
           />
         </div>
 
-        {/* Upload Area */}
-        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-2xl border border-blue-100 p-8 mb-8 text-center">
-          <div className="flex flex-col items-center justify-center">
-            <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mb-4">
-              <Upload className="h-8 w-8 text-blue-600" />
-            </div>
-            <h3 className="text-xl font-semibold text-slate-800 mb-2">Upload files to your cloud</h3>
-            <p className="text-sm text-slate-500 mb-4">Files are encrypted with AES-256 before upload</p>
-          </div>
+        {/* Upload Section - Pass currentFolderId */}
+        <div className="mb-8">
+          <FileUploadBox 
+            onUploadSuccess={handleDataChange} 
+            currentFolderId={currentFolderId} 
+          />
         </div>
 
         {/* Folders Section */}

@@ -1,31 +1,48 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Upload, File, CheckCircle, XCircle, Loader2 } from 'lucide-react';
 import { formatFileSize } from '@/lib/utils/formatFileSize';
 
 interface FileUploadBoxProps {
   onUploadSuccess?: () => void;
   currentFolderId: string | null;
-  compact?: boolean;
 }
 
-export default function FileUploadBox({ onUploadSuccess, currentFolderId, compact = false }: FileUploadBoxProps) {
+export default function FileUploadBox({ onUploadSuccess, currentFolderId }: FileUploadBoxProps) {
+  const [isDragging, setIsDragging] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  
+
+  // Listen for global upload trigger event
+  useEffect(() => {
+    const handleTriggerUpload = () => {
+      fileInputRef.current?.click();
+    };
+
+    window.addEventListener('triggerUpload', handleTriggerUpload);
+    return () => window.removeEventListener('triggerUpload', handleTriggerUpload);
+  }, []);
+
   const handleFileUpload = async (file: File) => {
     setUploading(true);
     setMessage(null);
+    setSelectedFile(file);
     setUploadProgress(0);
 
     try {
       const formData = new FormData();
       formData.append('file', file);
+      
+      // CRITICAL: Send the current folder ID so file gets saved in the right folder
       if (currentFolderId) {
         formData.append('folderId', currentFolderId);
+        console.log('Uploading to folder:', currentFolderId);
+      } else {
+        console.log('Uploading to root');
       }
 
       const progressInterval = setInterval(() => {
@@ -52,24 +69,47 @@ export default function FileUploadBox({ onUploadSuccess, currentFolderId, compac
         throw new Error(data.error || 'Upload failed');
       }
 
+      const folderText = currentFolderId ? `to folder` : 'to root';
       setMessage({ 
         type: 'success', 
-        text: `✓ "${file.name}" uploaded successfully` 
+        text: `✓ "${file.name}" (${formatFileSize(file.size)}) uploaded successfully ${folderText}!` 
       });
+      
+      setSelectedFile(null);
       
       if (onUploadSuccess) onUploadSuccess();
       
-      setTimeout(() => setMessage(null), 3000);
+      setTimeout(() => setMessage(null), 5000);
     } catch (error: any) {
       console.error('Upload error:', error);
       setMessage({ 
         type: 'error', 
-        text: error.message || 'Upload failed' 
+        text: error.message || 'Failed to upload file. Please try again.' 
       });
     } finally {
       setUploading(false);
       setUploadProgress(0);
     }
+  };
+
+  const onDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    
+    const files = Array.from(e.dataTransfer.files);
+    if (files.length > 0) {
+      handleFileUpload(files[0]);
+    }
+  };
+
+  const onDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const onDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
   };
 
   const onFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -84,71 +124,96 @@ export default function FileUploadBox({ onUploadSuccess, currentFolderId, compac
     fileInputRef.current?.click();
   };
 
-  if (compact) {
-    return (
-      <>
-        <input
-          type="file"
-          ref={fileInputRef}
-          onChange={onFileSelect}
-          className="hidden"
-        />
-        {message && (
-          <div className={`fixed bottom-4 right-4 z-50 p-3 rounded-lg shadow-lg ${
-            message.type === 'success' ? 'bg-green-500 text-white' : 'bg-red-500 text-white'
-          }`}>
-            {message.text}
-          </div>
-        )}
-        {uploading && (
-          <div className="fixed bottom-4 right-4 z-50 p-3 bg-blue-500 text-white rounded-lg shadow-lg">
-            Uploading... {uploadProgress}%
-          </div>
-        )}
-      </>
-    );
-  }
-
   return (
-    <div className="bg-white rounded-lg border border-slate-200 p-4">
+    <>
       <input
         type="file"
         ref={fileInputRef}
         onChange={onFileSelect}
         className="hidden"
+        id="fileInput"
+        disabled={uploading}
       />
       
-      <div className="flex items-center justify-between">
-        <div>
-          <h3 className="text-sm font-medium text-slate-700">Upload files</h3>
-          <p className="text-xs text-slate-400 mt-0.5">Drag and drop or click to browse</p>
-        </div>
-        <button
-          onClick={triggerUpload}
-          disabled={uploading}
-          className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors disabled:opacity-50"
+      <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-2xl border border-blue-100 p-8 mb-8 text-center">
+        <div 
+          onDrop={onDrop}
+          onDragOver={onDragOver}
+          onDragLeave={onDragLeave}
+          className={`border-2 border-dashed rounded-xl p-8 transition-all ${
+            isDragging
+              ? 'border-blue-500 bg-blue-50/50'
+              : 'border-blue-200 hover:border-blue-300'
+          }`}
         >
-          Select files
-        </button>
+          <div className="flex flex-col items-center justify-center">
+            <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mb-4">
+              <Upload className="h-8 w-8 text-blue-600" />
+            </div>
+            <h3 className="text-xl font-semibold text-slate-800 mb-2">
+              {isDragging ? 'Drop your file here' : 'Upload files to your cloud'}
+            </h3>
+            <p className="text-sm text-slate-500 mb-4">
+              {currentFolderId ? `Uploading to folder: ${currentFolderId}` : 'Uploading to root'}
+            </p>
+            <label
+              htmlFor="fileInput"
+              className={`inline-flex items-center px-6 py-2.5 bg-blue-600 text-white rounded-lg font-medium cursor-pointer hover:bg-blue-700 transition-colors ${
+                uploading ? 'opacity-50 cursor-not-allowed' : ''
+              }`}
+            >
+              <File className="h-4 w-4 mr-2" />
+              {uploading ? 'Uploading...' : 'Select files to upload'}
+            </label>
+            <p className="text-xs text-slate-400 mt-4">
+              Files are encrypted with AES-256 before upload
+            </p>
+          </div>
+        </div>
+
+        {selectedFile && !uploading && !message && (
+          <div className="mt-4 p-3 bg-blue-50 rounded-lg">
+            <p className="text-sm text-blue-800">
+              Ready to upload: {selectedFile.name} ({formatFileSize(selectedFile.size)})
+            </p>
+          </div>
+        )}
+
+        {uploading && (
+          <div className="mt-4">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm text-blue-600 flex items-center">
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                Uploading...
+              </span>
+              <span className="text-sm font-medium text-blue-600">{uploadProgress}%</span>
+            </div>
+            <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
+              <div 
+                className="h-2 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-full transition-all duration-300"
+                style={{ width: `${uploadProgress}%` }}
+              />
+            </div>
+          </div>
+        )}
+
+        {message && (
+          <div
+            className={`mt-4 p-3 rounded-xl flex items-start space-x-2 ${
+              message.type === 'success'
+                ? 'bg-green-50 text-green-800 border border-green-200'
+                : 'bg-red-50 text-red-800 border border-red-200'
+            }`}
+          >
+            {message.type === 'success' ? (
+              <CheckCircle className="h-5 w-5 flex-shrink-0" />
+            ) : (
+              <XCircle className="h-5 w-5 flex-shrink-0" />
+            )}
+            <span className="text-sm">{message.text}</span>
+          </div>
+        )}
       </div>
-
-      {uploading && (
-        <div className="mt-3">
-          <div className="flex justify-between text-xs text-slate-500 mb-1">
-            <span>Uploading...</span>
-            <span>{uploadProgress}%</span>
-          </div>
-          <div className="w-full bg-slate-100 rounded-full h-1">
-            <div className="bg-blue-600 h-1 rounded-full transition-all" style={{ width: `${uploadProgress}%` }} />
-          </div>
-        </div>
-      )}
-
-      {message && (
-        <div className={`mt-3 text-sm ${message.type === 'success' ? 'text-green-600' : 'text-red-600'}`}>
-          {message.text}
-        </div>
-      )}
-    </div>
+    </>
   );
 }
