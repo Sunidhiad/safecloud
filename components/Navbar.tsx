@@ -65,7 +65,7 @@ export default function Navbar({ onSearch, onUpload, viewMode = 'list', onViewMo
             </div>
           )}
 
-          {/* Upload Button */}
+          {/* Upload Button - Now triggers the same file picker */}
           <button
             onClick={onUpload}
             className="flex items-center space-x-2 px-5 py-2.5 bg-blue-600 text-white rounded-xl text-base font-medium hover:bg-blue-700 transition-colors"

@@ -1,13 +1,13 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import DashboardLayout from '@/components/DashboardLayout';
 import Navbar from '@/components/Navbar';
 import FileList from '@/components/FileList';
 import FolderList from '@/components/FolderList';
 import CreateFolderButton from '@/components/CreateFolderButton';
 import Breadcrumb from '@/components/Breadcrumb';
-import FileUploadBox from '@/components/FileUploadBox';
+import FileUploadBox, { FileUploadBoxRef } from '@/components/FileUploadBox';
 import { createClient } from '@/lib/supabase/client';
 import { 
   HardDrive, 
@@ -51,6 +51,7 @@ export default function DashboardPage() {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [categoryTypes, setCategoryTypes] = useState<string[] | null>(null);
   const [stats, setStats] = useState({ totalFiles: 0, totalSize: 0, totalFolders: 0 });
+  const uploadRef = useRef<FileUploadBoxRef>(null);
   const supabase = createClient();
 
   useEffect(() => {
@@ -172,9 +173,15 @@ export default function DashboardPage() {
     { title: 'Security', value: 'AES-256', icon: Shield, color: 'from-indigo-500 to-indigo-600', bgColor: 'bg-indigo-50' }
   ];
 
+  const handleUploadTrigger = () => {
+    if (uploadRef.current) {
+      uploadRef.current.triggerUpload();
+    }
+  };
+
   return (
     <DashboardLayout>
-      <Navbar />
+      <Navbar onUpload={handleUploadTrigger} />
       
       <div className="p-8">
         {/* Welcome Banner */}
@@ -232,13 +239,12 @@ export default function DashboardPage() {
           />
         </div>
 
-        {/* Upload Section - Pass currentFolderId */}
-        <div className="mb-8">
-          <FileUploadBox 
-            onUploadSuccess={handleDataChange} 
-            currentFolderId={currentFolderId} 
-          />
-        </div>
+        {/* Upload Section - With Ref */}
+        <FileUploadBox 
+          ref={uploadRef}
+          onUploadSuccess={handleDataChange} 
+          currentFolderId={currentFolderId} 
+        />
 
         {/* Folders Section */}
         {folders.length > 0 && (
