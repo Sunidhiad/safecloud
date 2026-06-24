@@ -114,7 +114,7 @@ SafeCloud-Security-Assessment Repository
 
 ### Login Page
 
-(Add Screenshot Here)
+![Login Page](screenshots/login-page.png)
 
 ### Dashboard
 
