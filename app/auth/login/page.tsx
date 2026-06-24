@@ -5,11 +5,12 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
 import { createClient } from '@/lib/supabase/client';
-import { Mail, Lock, LogIn, Cloud, Shield, Zap, ArrowRight } from 'lucide-react';
+import { Mail, Lock, LogIn, Cloud, Shield, Zap, ArrowRight, Eye, EyeOff } from 'lucide-react';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const router = useRouter();
@@ -39,39 +40,43 @@ export default function LoginPage() {
       });
 
       if (error) {
-        // Proper error handling based on error message
-        const errorMessage = error.message;
-        
-        if (errorMessage === 'Invalid login credentials') {
+        if (error.message === 'Invalid login credentials') {
           throw new Error('Invalid email or password. Please try again.');
-        } else if (errorMessage.includes('Email not confirmed')) {
+        } else if (error.message.includes('Email not confirmed')) {
           throw new Error('Please confirm your email address before logging in.');
-        } else if (errorMessage.includes('Invalid email')) {
+        } else if (error.message.includes('Invalid email')) {
           throw new Error('Please enter a valid email address.');
+        } else if (error.message.includes('User not found')) {
+          throw new Error('No account found with this email. Please sign up first.');
         } else {
-          throw new Error(errorMessage || 'Failed to login. Please try again.');
+          throw new Error(error.message);
         }
       }
 
       if (data.session) {
-        // Check MFA requirement
-        const { data: aalData, error: aalError } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
-        
-        if (!aalError && aalData && aalData.nextLevel === 'aal2' && aalData.currentLevel !== 'aal2') {
-          // MFA required, redirect to MFA page
-          router.replace('/auth/mfa');
-          return;
+        try {
+          const { data: aalData } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+          
+          if (aalData?.nextLevel === 'aal2' && aalData?.currentLevel !== 'aal2') {
+            router.replace('/auth/mfa');
+            return;
+          }
+        } catch (mfaError) {
+          console.error('MFA check error:', mfaError);
         }
         
-        // No MFA required, go to dashboard
         router.replace('/dashboard');
       }
     } catch (error: any) {
       console.error('Login error:', error);
-      setError(error.message || 'Failed to login. Please check your credentials.');
+      setError(error.message || 'Failed to login. Please try again.');
     } finally {
       setLoading(false);
     }
+  };
+
+  const togglePasswordVisibility = () => {
+    setShowPassword(!showPassword);
   };
 
   const features = [
@@ -84,7 +89,7 @@ export default function LoginPage() {
     <div className="min-h-screen flex">
       {/* Left Panel - Branding */}
       <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 relative overflow-hidden">
-        <div className="absolute inset-0 opacity-10" style={{backgroundImage: 'url("data:image/svg+xml,%3Csvg width=%2260%22 height=%2260%22 viewBox=%220 0 60 60%22 xmlns=%22http://www.w3.org/2000/svg%22%3E%3Cg fill=%22none%22 fill-rule=%22evenodd%22%3E%3Cg fill=%22%23ffffff%22 fill-opacity=%220.05%22%3E%3Cpath d=%22M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z%22/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")'}}></div>
+        <div className="absolute inset-0 bg-[url('data:image/svg+xml,%3Csvg width=\'60\' height=\'60\' viewBox=\'0 0 60 60\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cg fill=\'none\' fill-rule=\'evenodd\'%3E%3Cg fill=\'%23ffffff\' fill-opacity=\'0.05\'%3E%3Cpath d=\'M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z\'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E')] opacity-10"></div>
         
         <div className="relative z-10 flex flex-col justify-center px-12 text-white">
           <motion.div
@@ -180,13 +185,25 @@ export default function LoginPage() {
                 <div className="relative group">
                   <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-slate-400 group-focus-within:text-blue-600 transition-colors" />
                   <input
-                    type="password"
+                    type={showPassword ? 'text' : 'password'}
                     required
-                    className="pl-10 w-full px-3 py-2.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                    className="pl-10 pr-12 w-full px-3 py-2.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
                     placeholder="••••••••"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                   />
+                  <button
+                    type="button"
+                    onClick={togglePasswordVisibility}
+                    className="absolute right-3 top-1/2 transform -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 transition-colors"
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  >
+                    {showPassword ? (
+                      <EyeOff className="h-5 w-5" />
+                    ) : (
+                      <Eye className="h-5 w-5" />
+                    )}
+                  </button>
                 </div>
               </div>
 
