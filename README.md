@@ -113,26 +113,19 @@ SafeCloud-Security-Assessment Repository
 ## Screenshots
 
 ### Login Page
-
 ![Login Page](screenshots/login-page.png)
 
 ### Dashboard
-
-(Add Screenshot Here)
+![Dashboard](screenshots/dashboard.png)
 
 ### File Upload
-
-(Add Screenshot Here)
+![File Upload](screenshots/file-upload.png)
 
 ### Folder Management
-
-(Add Screenshot Here)
+![Folder Management](screenshots/folder-management.png)
 
 ### Search Functionality
-
-(Add Screenshot Here)
-
----
+![Search Functionality](screenshots/search-page.png)
 
 ## Project Highlights
 
