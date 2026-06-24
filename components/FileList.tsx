@@ -2,9 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import { File, Star, Download, Trash2, Eye, Edit2, Share2 } from 'lucide-react';
+import { File as FileIcon, Star, Download, Trash2, Eye, Edit2, Search, XCircle } from 'lucide-react';
 import { formatFileSize, getFileIcon } from '@/lib/files/fileTypes';
-import ShareModal from './ShareModal';
 
 interface FileType {
   id: string;
@@ -14,7 +13,7 @@ interface FileType {
   created_at: string;
   is_favorite: boolean;
   is_trashed: boolean;
-  owner_id?: string;
+  folder_name?: string | null;
 }
 
 interface FileListProps {
@@ -23,34 +22,38 @@ interface FileListProps {
   categoryFilter?: string[] | null;
   title?: string;
   limit?: number;
+  searchQuery?: string;
   onFileDeleted?: () => void;
   onFileRenamed?: () => void;
-  hideShare?: boolean;
+  onSearchResults?: (count: number) => void;
 }
 
 export default function FileList({ 
   refreshTrigger, 
   currentFolderId, 
   categoryFilter,
+  title = 'My Files',
   limit,
+  searchQuery = '',
   onFileDeleted, 
   onFileRenamed,
-  hideShare = false
+  onSearchResults
 }: FileListProps) {
   const [files, setFiles] = useState<FileType[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isSearching, setIsSearching] = useState(false);
   const [renamingFile, setRenamingFile] = useState<string | null>(null);
   const [newFileName, setNewFileName] = useState('');
-  const [shareModalFile, setShareModalFile] = useState<{id: string, name: string} | null>(null);
-  const [shares, setShares] = useState<any[]>([]);
   const supabase = createClient();
 
   useEffect(() => {
     loadFiles();
-  }, [refreshTrigger, currentFolderId, categoryFilter]);
+  }, [refreshTrigger, currentFolderId, categoryFilter, searchQuery]);
 
   const loadFiles = async () => {
     setLoading(true);
+    setIsSearching(!!searchQuery);
+    
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
@@ -59,6 +62,31 @@ export default function FileList({
         return;
       }
 
+      // If there's a search query, use the search API
+      if (searchQuery && searchQuery.trim()) {
+        const params = new URLSearchParams({
+          q: searchQuery.trim(),
+          folderId: currentFolderId ?? 'null',
+          includeTrash: 'false'
+        });
+        
+        const response = await fetch(`/api/files/search?${params.toString()}`);
+        const data = await response.json();
+        
+        if (data.success) {
+          setFiles(data.files || []);
+          if (onSearchResults) onSearchResults(data.count);
+        } else {
+          console.error('Search error:', data.error);
+          setFiles([]);
+        }
+        
+        setLoading(false);
+        setIsSearching(false);
+        return;
+      }
+
+      // Normal file loading (no search)
       let query = supabase
         .from('files')
         .select('*')
@@ -84,23 +112,13 @@ export default function FileList({
 
       if (error) throw error;
       setFiles(data || []);
+      if (onSearchResults) onSearchResults(data?.length || 0);
     } catch (error) {
       console.error('Error loading files:', error);
       setFiles([]);
     } finally {
       setLoading(false);
-    }
-  };
-
-  const loadShares = async (fileId: string) => {
-    try {
-      const response = await fetch(`/api/files/share/${fileId}`);
-      const data = await response.json();
-      if (data.success) {
-        setShares(data.shares || []);
-      }
-    } catch (error) {
-      console.error('Error loading shares:', error);
+      setIsSearching(false);
     }
   };
 
@@ -146,60 +164,18 @@ export default function FileList({
   };
 
   const handleDownload = async (fileId: string, fileName: string) => {
-    try {
-      const response = await fetch(`/api/files/download/${fileId}`);
-      const blob = await response.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = fileName;
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch (error) {
-      console.error('Download error:', error);
-      alert('Failed to download file');
-    }
+    const response = await fetch(`/api/files/download/${fileId}`);
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   const handleView = (fileId: string) => {
     window.open(`/api/files/view/${fileId}`, '_blank');
-  };
-
-  const handleShare = async (fileId: string, fileName: string) => {
-    setShareModalFile({ id: fileId, name: fileName });
-    await loadShares(fileId);
-  };
-
-  const handleShareSubmit = async (email: string, permission: string) => {
-    if (!shareModalFile) return;
-    
-    const response = await fetch(`/api/files/share/${shareModalFile.id}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, permission })
-    });
-    
-    const data = await response.json();
-    if (!data.success) throw new Error(data.error);
-    
-    // Refresh shares list
-    await loadShares(shareModalFile.id);
-  };
-
-  const handleRevokeShare = async (shareId: string) => {
-    if (!shareModalFile) return;
-    
-    const response = await fetch(`/api/files/share/${shareModalFile.id}`, {
-      method: 'DELETE',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sharedWithUserId: shareId })
-    });
-    
-    const data = await response.json();
-    if (!data.success) throw new Error(data.error);
-    
-    // Refresh shares list
-    await loadShares(shareModalFile.id);
   };
 
   if (loading) {
@@ -212,19 +188,36 @@ export default function FileList({
     );
   }
 
-  if (files.length === 0) {
-    return (
-      <div className="bg-white rounded-xl border border-slate-200 p-12 text-center">
-        <File className="h-16 w-16 text-slate-300 mx-auto mb-4" />
-        <p className="text-lg text-slate-500 font-medium">No files found</p>
-        <p className="text-base text-slate-400 mt-2">Upload your first file to get started</p>
-      </div>
-    );
-  }
-
   return (
-    <>
-      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+    <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+      {isSearching && (
+        <div className="px-6 py-3 bg-blue-50 border-b border-blue-100 flex items-center justify-between">
+          <span className="text-sm text-blue-700 flex items-center">
+            <Search className="h-4 w-4 mr-2" />
+            Searching...
+          </span>
+        </div>
+      )}
+
+      {files.length === 0 && !isSearching && (
+        <div className="p-12 text-center">
+          <FileIcon className="h-16 w-16 text-slate-300 mx-auto mb-4" />
+          <p className="text-lg text-slate-500 font-medium">No files found</p>
+          <p className="text-base text-slate-400 mt-2">Upload your first file to get started</p>
+        </div>
+      )}
+
+      {files.length === 0 && isSearching && (
+        <div className="p-12 text-center">
+          <Search className="h-16 w-16 text-slate-300 mx-auto mb-4" />
+          <p className="text-lg text-slate-500 font-medium">No results found</p>
+          <p className="text-base text-slate-400 mt-2">
+            No files match your search "{searchQuery}"
+          </p>
+        </div>
+      )}
+
+      {files.length > 0 && (
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead className="bg-slate-50 border-b border-slate-200">
@@ -238,7 +231,7 @@ export default function FileList({
             </thead>
             <tbody className="divide-y divide-slate-100">
               {files.map((file) => {
-                const isImage = file.file_type.startsWith('image/');
+                const isImage = file.file_type?.startsWith('image/') || false;
                 return (
                   <tr key={file.id} className="hover:bg-slate-50 transition-colors">
                     <td className="px-6 py-4">
@@ -259,12 +252,21 @@ export default function FileList({
                             autoFocus
                           />
                         ) : (
-                          <span className="text-base font-medium text-slate-700 truncate max-w-md">{file.file_name}</span>
+                          <div>
+                            <span className="text-base font-medium text-slate-700 truncate max-w-md block">
+                              {file.file_name}
+                            </span>
+                            {file.folder_name && (
+                              <span className="text-xs text-slate-400">
+                                📁 {file.folder_name}
+                              </span>
+                            )}
+                          </div>
                         )}
                       </div>
                     </td>
                     <td className="px-6 py-4 text-base text-slate-500">
-                      {file.file_type.split('/')[0] || 'file'}
+                      {file.file_type?.split('/')[0] || 'file'}
                     </td>
                     <td className="px-6 py-4 text-base text-slate-500">
                       {formatFileSize(file.file_size)}
@@ -289,11 +291,6 @@ export default function FileList({
                         <button onClick={() => handleFavorite(file.id, file.is_favorite)} className={`p-2 rounded-lg transition-colors ${file.is_favorite ? 'text-yellow-500' : 'text-slate-400 hover:text-yellow-500'}`} title="Favorite">
                           <Star className={`h-5 w-5 ${file.is_favorite ? 'fill-yellow-500' : ''}`} />
                         </button>
-                        {!hideShare && (
-                          <button onClick={() => handleShare(file.id, file.file_name)} className="p-2 text-slate-400 hover:text-blue-600 rounded-lg hover:bg-blue-50 transition-colors" title="Share">
-                            <Share2 className="h-5 w-5" />
-                          </button>
-                        )}
                         <button onClick={() => handleDelete(file.id, file.file_name)} className="p-2 text-slate-400 hover:text-red-600 rounded-lg hover:bg-red-50 transition-colors" title="Delete">
                           <Trash2 className="h-5 w-5" />
                         </button>
@@ -305,23 +302,7 @@ export default function FileList({
             </tbody>
           </table>
         </div>
-      </div>
-
-      {/* Share Modal */}
-      {shareModalFile && (
-        <ShareModal
-          fileId={shareModalFile.id}
-          fileName={shareModalFile.name}
-          isOpen={true}
-          onClose={() => {
-            setShareModalFile(null);
-            setShares([]);
-          }}
-          onShare={handleShareSubmit}
-          existingShares={shares}
-          onRevoke={handleRevokeShare}
-        />
       )}
-    </>
+    </div>
   );
 }

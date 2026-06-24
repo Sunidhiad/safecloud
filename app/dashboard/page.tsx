@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import DashboardLayout from '@/components/DashboardLayout';
 import Navbar from '@/components/Navbar';
 import FileList from '@/components/FileList';
@@ -19,7 +19,9 @@ import {
   Music,
   FileText,
   TrendingUp,
-  ArrowLeft
+  ArrowLeft,
+  Search,
+  X
 } from 'lucide-react';
 
 const categories = [
@@ -51,6 +53,8 @@ export default function DashboardPage() {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [categoryTypes, setCategoryTypes] = useState<string[] | null>(null);
   const [stats, setStats] = useState({ totalFiles: 0, totalSize: 0, totalFolders: 0 });
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResultCount, setSearchResultCount] = useState(0);
   const uploadRef = useRef<FileUploadBoxRef>(null);
   const supabase = createClient();
 
@@ -106,6 +110,7 @@ export default function DashboardPage() {
     setCurrentFolderName(folderName);
     setSelectedCategory(null);
     setCategoryTypes(null);
+    setSearchQuery('');
     
     const newPath = [...folderPath];
     newPath.push({ id: folderId, name: folderName });
@@ -118,6 +123,7 @@ export default function DashboardPage() {
       setCurrentFolderName('');
       setSelectedCategory(null);
       setCategoryTypes(null);
+      setSearchQuery('');
       const rootIndex = folderPath.findIndex(item => item.id === null);
       setFolderPath(folderPath.slice(0, rootIndex + 1));
     } else {
@@ -128,6 +134,7 @@ export default function DashboardPage() {
         setCurrentFolderName(folderPath[folderIndex].name);
         setSelectedCategory(null);
         setCategoryTypes(null);
+        setSearchQuery('');
       }
     }
   };
@@ -142,6 +149,7 @@ export default function DashboardPage() {
       setCurrentFolderName(newCurrentFolder.name);
       setSelectedCategory(null);
       setCategoryTypes(null);
+      setSearchQuery('');
     }
   };
 
@@ -159,6 +167,14 @@ export default function DashboardPage() {
     setSelectedCategory(null);
     setCategoryTypes(null);
   };
+
+  const handleSearch = useCallback((query: string) => {
+    setSearchQuery(query);
+  }, []);
+
+  const handleSearchResults = useCallback((count: number) => {
+    setSearchResultCount(count);
+  }, []);
 
   const formatSize = (bytes: number) => {
     const mb = bytes / (1024 * 1024);
@@ -179,9 +195,12 @@ export default function DashboardPage() {
     }
   };
 
+  // Show search results count
+  const showSearchResults = searchQuery && searchQuery.trim();
+
   return (
     <DashboardLayout>
-      <Navbar onUpload={handleUploadTrigger} />
+      <Navbar onSearch={handleSearch} onUpload={handleUploadTrigger} searchQuery={searchQuery} />
       
       <div className="p-8">
         {/* Welcome Banner */}
@@ -211,6 +230,27 @@ export default function DashboardPage() {
           })}
         </div>
 
+        {/* Search Results Info */}
+        {showSearchResults && (
+          <div className="flex items-center justify-between mb-4 px-4 py-3 bg-blue-50 border border-blue-200 rounded-xl">
+            <div className="flex items-center space-x-2">
+              <Search className="h-5 w-5 text-blue-600" />
+              <span className="text-sm text-blue-800">
+                Found {searchResultCount} result{searchResultCount !== 1 ? 's' : ''} for "{searchQuery.trim()}"
+              </span>
+            </div>
+            <button
+              onClick={() => {
+                setSearchQuery('');
+                handleSearch('');
+              }}
+              className="p-1 text-blue-600 hover:text-blue-800 hover:bg-blue-100 rounded-lg transition-colors"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        )}
+
         {/* Navigation Bar - Folder Creation Button */}
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center space-x-3">
@@ -239,15 +279,15 @@ export default function DashboardPage() {
           />
         </div>
 
-        {/* Upload Section - With Ref */}
+        {/* Upload Section */}
         <FileUploadBox 
           ref={uploadRef}
           onUploadSuccess={handleDataChange} 
           currentFolderId={currentFolderId} 
         />
 
-        {/* Folders Section */}
-        {folders.length > 0 && (
+        {/* Folders Section - Hide during search */}
+        {!showSearchResults && folders.length > 0 && (
           <FolderList
             folders={folders}
             currentFolderId={currentFolderId}
@@ -257,8 +297,8 @@ export default function DashboardPage() {
           />
         )}
 
-        {/* Quick Categories */}
-        {!currentFolderId && (
+        {/* Quick Categories - Hide during search */}
+        {!showSearchResults && !currentFolderId && (
           <div className="mb-8">
             <h2 className="text-lg font-semibold text-slate-800 mb-4">Quick filters</h2>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
@@ -286,30 +326,24 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* Recent Files Section */}
-        <div className="mb-8">
-          <h2 className="text-lg font-semibold text-slate-800 mb-4">Recent files</h2>
-          <FileList
-            refreshTrigger={refreshTrigger}
-            currentFolderId={currentFolderId}
-            categoryFilter={categoryTypes}
-            limit={5}
-            onFileDeleted={handleDataChange}
-            onFileRenamed={handleDataChange}
-          />
-        </div>
-
-        {/* All Files Section */}
+        {/* File List - Shows search results when searching */}
         <div>
           <h2 className="text-lg font-semibold text-slate-800 mb-4">
-            {selectedCategory ? `${selectedCategory} (filtered)` : 'All files'}
+            {showSearchResults 
+              ? `Search Results (${searchResultCount})` 
+              : selectedCategory 
+                ? `${selectedCategory} (filtered)` 
+                : 'All files'
+            }
           </h2>
           <FileList
             refreshTrigger={refreshTrigger}
             currentFolderId={currentFolderId}
             categoryFilter={categoryTypes}
+            searchQuery={searchQuery}
             onFileDeleted={handleDataChange}
             onFileRenamed={handleDataChange}
+            onSearchResults={handleSearchResults}
           />
         </div>
 
