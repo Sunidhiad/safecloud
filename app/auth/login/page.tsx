@@ -1,25 +1,42 @@
 'use client';
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
 import { createClient } from '@/lib/supabase/client';
-import { Mail, Lock, LogIn, Cloud, Shield, Zap, ArrowRight, Eye, EyeOff } from 'lucide-react';
+import { Mail, Lock, LogIn, Cloud, Shield, Zap, ArrowRight, Eye, EyeOff, CheckCircle } from 'lucide-react';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
   const [loading, setLoading] = useState(false);
   const router = useRouter();
+  const searchParams = useSearchParams();
   const supabase = createClient();
+
+  // Check for success/error messages from URL params
+  useEffect(() => {
+    const confirmed = searchParams.get('confirmed');
+    const errorParam = searchParams.get('error');
+
+    if (confirmed === 'true') {
+      setSuccessMessage('Email confirmed successfully! Please log in to continue.');
+    }
+
+    if (errorParam === 'confirmation_failed') {
+      setError('Email confirmation failed. Please try again or contact support.');
+    }
+  }, [searchParams]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError('');
+    setSuccessMessage('');
 
     if (!email.trim()) {
       setError('Email is required');
@@ -89,7 +106,7 @@ export default function LoginPage() {
     <div className="min-h-screen flex">
       {/* Left Panel - Branding */}
       <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 relative overflow-hidden">
-        <div className="absolute inset-0 bg-[url('data:image/svg+xml,%3Csvg width=\'60\' height=\'60\' viewBox=\'0 0 60 60\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cg fill=\'none\' fill-rule=\'evenodd\'%3E%3Cg fill=\'%23ffffff\' fill-opacity=\'0.05\'%3E%3Cpath d=\'M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z\'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E')] opacity-10"></div>
+        <div className="absolute inset-0 bg-[url('data:image/svg+xml,%3Csvg width%3D%2260%22 height%3D%2260%22 viewBox%3D%220%200%2060%2060%22 xmlns%3D%22http://www.w3.org/2000/svg%22%3E%3Cg fill%3D%22none%22 fill-rule%3D%22evenodd%22%3E%3Cg fill%3D%22%23ffffff%22 fill-opacity%3D%220.05%22%3E%3Cpath d%3D%22M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z%22/%3E%3C/g%3E%3C/g%3E%3C/svg%3E')] opacity-10"></div>
         
         <div className="relative z-10 flex flex-col justify-center px-12 text-white">
           <motion.div
@@ -149,6 +166,17 @@ export default function LoginPage() {
               <h2 className="text-2xl font-bold text-slate-900">Sign In</h2>
               <p className="text-slate-600 mt-1">Access your secure dashboard</p>
             </div>
+
+            {successMessage && (
+              <motion.div
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="mb-6 p-3 bg-green-50 border border-green-200 rounded-lg text-green-700 text-sm flex items-start space-x-2"
+              >
+                <CheckCircle className="h-5 w-5 flex-shrink-0" />
+                <span>{successMessage}</span>
+              </motion.div>
+            )}
 
             {error && (
               <motion.div
@@ -219,10 +247,10 @@ export default function LoginPage() {
                       Signing in...
                     </div>
                   ) : (
-                    <>
+                    <span className="flex items-center">
                       <LogIn className="h-5 w-5 mr-2 group-hover:scale-110 transition-transform" />
-                      Sign In
-                    </>
+                      <span>Sign In</span>
+                    </span>
                   )}
                 </button>
                 
